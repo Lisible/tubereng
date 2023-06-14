@@ -9,6 +9,7 @@ license = "BSD-2-Clause"
 [workspace]
 members = [
   "crates/*",
+  "examples/*"
 ]
 
 [dependencies]
