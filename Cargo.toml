@@ -6,6 +6,11 @@ edition = "2021"
 license = "BSD-2-Clause"
 
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[workspace]
+members = [
+  "crates/*",
+]
 
 [dependencies]
+tubereng-engine = { path = "crates/tubereng-engine" }
+tubereng-winit = { path = "crates/tubereng-winit" }
