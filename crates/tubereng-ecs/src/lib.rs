@@ -1,3 +1,5 @@
+#![warn(clippy::pedantic)]
+
 pub mod system;
 
 pub trait EntityDefinition {}

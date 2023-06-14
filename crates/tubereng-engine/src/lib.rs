@@ -1,6 +1,6 @@
 #![warn(clippy::pedantic)]
 
-use tubereng_ecs::system::{IntoSystem, System};
+use tubereng_ecs::system::{Into, System};
 
 pub struct Engine {
     application_title: &'static str,
@@ -41,7 +41,7 @@ impl EngineBuilder {
     #[must_use]
     pub fn with_setup_system<F, A>(mut self, setup_system: F) -> Self
     where
-        F: 'static + IntoSystem<A>,
+        F: 'static + Into<A>,
     {
         self.setup_system = Some(setup_system.into_system());
         self

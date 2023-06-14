@@ -9,6 +9,7 @@ pub struct EcsCommandBuffer {
 }
 
 impl EcsCommandBuffer {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             commands: Vec::new(),
@@ -50,11 +51,11 @@ impl System {
     }
 }
 
-pub trait IntoSystem<T> {
+pub trait Into<T> {
     fn into_system(self) -> System;
 }
 
-impl<F> IntoSystem<F> for F
+impl<F> Into<F> for F
 where
     F: 'static + FnMut(),
 {
@@ -66,7 +67,7 @@ where
     }
 }
 
-impl<F> IntoSystem<(F,)> for F
+impl<F> Into<(F,)> for F
 where
     F: 'static + FnMut(&mut EcsCommandBuffer),
 {
