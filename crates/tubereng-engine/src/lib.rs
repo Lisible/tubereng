@@ -1,10 +1,10 @@
 #![warn(clippy::pedantic)]
 
-use tubereng_ecs::system::System;
+use tubereng_ecs::system::{IntoSystem, System};
 
 pub struct Engine {
     application_title: &'static str,
-    setup_system: Box<dyn System>,
+    setup_system: System,
 }
 
 impl Engine {
@@ -20,7 +20,7 @@ impl Engine {
 
 pub struct EngineBuilder {
     application_title: Option<&'static str>,
-    setup_system: Option<Box<dyn System>>,
+    setup_system: Option<System>,
 }
 
 impl EngineBuilder {
@@ -39,11 +39,11 @@ impl EngineBuilder {
     }
 
     #[must_use]
-    pub fn with_setup_system<F>(mut self, setup_system: F) -> Self
+    pub fn with_setup_system<F, A>(mut self, setup_system: F) -> Self
     where
-        F: 'static + System,
+        F: 'static + IntoSystem<A>,
     {
-        self.setup_system = Some(Box::new(setup_system));
+        self.setup_system = Some(setup_system.into_system());
         self
     }
 
@@ -51,7 +51,7 @@ impl EngineBuilder {
     pub fn build(self) -> Engine {
         Engine {
             application_title: self.application_title.unwrap_or("TuberApp"),
-            setup_system: self.setup_system.unwrap_or(Box::new(|| ())),
+            setup_system: self.setup_system.unwrap_or((|| ()).into_system()),
         }
     }
 }

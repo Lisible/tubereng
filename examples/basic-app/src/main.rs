@@ -1,6 +1,6 @@
 #![warn(clippy::pedantic)]
 
-use tubereng::{engine::EngineBuilder, winit::WinitTuberRunner};
+use tubereng::{ecs::system::EcsCommandBuffer, engine::EngineBuilder, winit::WinitTuberRunner};
 
 fn main() {
     let engine = EngineBuilder::new()
@@ -10,6 +10,12 @@ fn main() {
     WinitTuberRunner::run(engine);
 }
 
-fn setup() {
-    println!("Setting up");
+struct Player;
+struct Enemy;
+struct Health(i32);
+
+fn setup(ecs_command_buffer: &mut EcsCommandBuffer) {
+    ecs_command_buffer.insert((Player, Health(10)));
+    ecs_command_buffer.insert((Enemy, Health(5)));
+    ecs_command_buffer.insert((Enemy, Health(8)));
 }
