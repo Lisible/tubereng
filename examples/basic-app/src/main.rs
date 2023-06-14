@@ -1,6 +1,6 @@
 #![warn(clippy::pedantic)]
 
-use tubereng::{ecs::system::EcsCommandBuffer, engine::EngineBuilder, winit::WinitTuberRunner};
+use tubereng::{ecs::commands::EcsCommandBuffer, engine::EngineBuilder, winit::WinitTuberRunner};
 
 fn main() {
     let engine = EngineBuilder::new()

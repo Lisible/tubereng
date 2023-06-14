@@ -1,39 +1,4 @@
-use crate::EntityDefinition;
-
-pub enum EcsCommand {
-    InsertEntity(Box<dyn EntityDefinition>),
-}
-
-pub struct EcsCommandBuffer {
-    commands: Vec<EcsCommand>,
-}
-
-impl EcsCommandBuffer {
-    #[must_use]
-    pub fn new() -> Self {
-        Self {
-            commands: Vec::new(),
-        }
-    }
-
-    pub fn clear(&mut self) {
-        self.commands.clear();
-    }
-
-    pub fn insert<ED>(&mut self, entity: ED)
-    where
-        ED: 'static + EntityDefinition,
-    {
-        self.commands
-            .push(EcsCommand::InsertEntity(Box::new(entity)));
-    }
-}
-
-impl Default for EcsCommandBuffer {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+use crate::commands::EcsCommandBuffer;
 
 pub struct System {
     command_buffer: EcsCommandBuffer,
