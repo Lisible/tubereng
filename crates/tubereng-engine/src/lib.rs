@@ -21,6 +21,11 @@ impl Engine {
         self.ecs.run_systems(&[&self.setup_system]);
         self.ecs.execute_pending_commands();
     }
+
+    pub fn update(&mut self) {
+        self.ecs.run_registered_systems();
+        self.ecs.execute_pending_commands();
+    }
 }
 
 pub struct EngineBuilder {

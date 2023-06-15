@@ -21,6 +21,7 @@ pub struct Ecs {
     components: HashMap<TypeId, ComponentStore>,
     next_entity_id: EntityId,
     pending_commands: CommandBuffer,
+    systems: Vec<System>,
 }
 impl Ecs {
     #[must_use]
@@ -29,6 +30,7 @@ impl Ecs {
             components: HashMap::new(),
             next_entity_id: 0,
             pending_commands: CommandBuffer::new(),
+            systems: vec![],
         }
     }
 
@@ -67,6 +69,17 @@ impl Ecs {
 
         component_store.resize_with(self.next_entity_id, || None);
         component_store[entity_id] = Some(Box::new(component));
+    }
+
+    pub fn register_system(&mut self, system: System) {
+        trace!("Registering a system");
+        self.systems.push(system);
+    }
+
+    pub fn run_registered_systems(&mut self) {
+        for system in &self.systems {
+            system.run(&mut self.pending_commands);
+        }
     }
 
     pub fn run_systems(&mut self, systems: &[&System]) {
@@ -132,7 +145,7 @@ mod tests {
             command_buffer.insert((Player, Health(9)));
         };
 
-        ecs.run_systems(&[&add_entity.into_system()]);
+        ecs.run_systems(&[add_entity.into_system()]);
         assert_eq!(ecs.pending_commands.len(), 2);
 
         ecs.execute_pending_commands();

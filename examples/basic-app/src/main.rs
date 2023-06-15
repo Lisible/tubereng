@@ -22,4 +22,9 @@ fn setup(command_buffer: &mut CommandBuffer) {
     command_buffer.insert((Player, Health(10)));
     command_buffer.insert((Enemy, Health(5)));
     command_buffer.insert((Enemy, Health(8)));
+    command_buffer.register_system(log_player_health);
+}
+
+fn log_player_health() {
+    println!("10");
 }

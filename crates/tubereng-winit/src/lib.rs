@@ -34,6 +34,7 @@ impl WinitTuberRunner {
                     control_flow.set_exit();
                 }
                 Event::MainEventsCleared => {
+                    engine.update();
                     window.request_redraw();
                 }
                 Event::RedrawRequested(_) => {}
