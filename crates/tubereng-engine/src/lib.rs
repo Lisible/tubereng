@@ -19,6 +19,7 @@ impl Engine {
 
     pub fn run_setup_system(&mut self) {
         self.ecs.run_systems(&[&self.setup_system]);
+        self.ecs.execute_pending_commands();
     }
 }
 
