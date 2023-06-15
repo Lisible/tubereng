@@ -1,14 +1,14 @@
 use crate::{Ecs, EntityDefinition};
 
-pub trait EcsCommand {
-    fn apply(self, ecs: &mut Ecs);
+pub trait Command {
+    fn apply(&mut self, ecs: &mut Ecs);
 }
 
 pub struct InsertEntity<ED>
 where
     ED: EntityDefinition,
 {
-    entity: ED,
+    entity: Option<ED>,
 }
 
 impl<ED> InsertEntity<ED>
@@ -16,24 +16,26 @@ where
     ED: EntityDefinition,
 {
     pub fn new(entity: ED) -> Self {
-        Self { entity }
+        Self {
+            entity: Some(entity),
+        }
     }
 }
 
-impl<ED> EcsCommand for InsertEntity<ED>
+impl<ED> Command for InsertEntity<ED>
 where
     ED: EntityDefinition,
 {
-    fn apply(self, ecs: &mut Ecs) {
-        ecs.insert(self.entity);
+    fn apply(&mut self, ecs: &mut Ecs) {
+        ecs.insert(self.entity.take().unwrap());
     }
 }
 
-pub struct EcsCommandBuffer {
-    commands: Vec<Box<dyn EcsCommand>>,
+pub struct CommandBuffer {
+    commands: Vec<Box<dyn Command>>,
 }
 
-impl EcsCommandBuffer {
+impl CommandBuffer {
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -51,9 +53,17 @@ impl EcsCommandBuffer {
     {
         self.commands.push(Box::new(InsertEntity::new(entity)));
     }
+
+    pub fn iter_mut(&mut self) -> std::slice::IterMut<Box<dyn Command>> {
+        self.commands.iter_mut()
+    }
+
+    pub fn len(&self) -> usize {
+        self.commands.len()
+    }
 }
 
-impl Default for EcsCommandBuffer {
+impl Default for CommandBuffer {
     fn default() -> Self {
         Self::new()
     }
@@ -70,12 +80,12 @@ mod tests {
     fn apply_insert_entity_command() {
         let mut ecs = Ecs::new();
         assert_eq!(ecs.entity_count(), 0);
-        let insert_entity_command = InsertEntity::new((Player, Health(10)));
+        let mut insert_entity_command = InsertEntity::new((Player, Health(10)));
         insert_entity_command.apply(&mut ecs);
         assert_eq!(ecs.entity_count(), 1);
-        let insert_entity_command = InsertEntity::new((Player, Health(10)));
+        let mut insert_entity_command = InsertEntity::new((Player, Health(10)));
         insert_entity_command.apply(&mut ecs);
-        let insert_entity_command = InsertEntity::new((Player, Health(10)));
+        let mut insert_entity_command = InsertEntity::new((Player, Health(10)));
         insert_entity_command.apply(&mut ecs);
         assert_eq!(ecs.entity_count(), 3);
     }

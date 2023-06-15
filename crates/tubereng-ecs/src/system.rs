@@ -1,18 +1,12 @@
-use crate::commands::EcsCommandBuffer;
+use crate::commands::CommandBuffer;
 
 pub struct System {
-    command_buffer: EcsCommandBuffer,
-    system_fn: Box<dyn FnMut(&mut EcsCommandBuffer)>,
+    system_fn: Box<dyn Fn(&mut CommandBuffer)>,
 }
 
 impl System {
-    pub fn run(&mut self) {
-        self.command_buffer.clear();
-        (self.system_fn)(&mut self.command_buffer);
-    }
-
-    pub fn command_buffer_mut(&mut self) -> &mut EcsCommandBuffer {
-        &mut self.command_buffer
+    pub fn run(&self, command_buffer: &mut CommandBuffer) {
+        (self.system_fn)(command_buffer);
     }
 }
 
@@ -20,26 +14,24 @@ pub trait Into<T> {
     fn into_system(self) -> System;
 }
 
-impl<F> Into<F> for F
+impl<F> Into<()> for F
 where
-    F: 'static + FnMut(),
+    F: 'static + Fn(),
 {
-    fn into_system(mut self) -> System {
+    fn into_system(self) -> System {
         System {
             system_fn: Box::new(move |_| (self)()),
-            command_buffer: EcsCommandBuffer::new(),
         }
     }
 }
 
-impl<F> Into<(F,)> for F
+impl<F> Into<(&mut CommandBuffer,)> for F
 where
-    F: 'static + FnMut(&mut EcsCommandBuffer),
+    F: 'static + Fn(&mut CommandBuffer),
 {
     fn into_system(self) -> System {
         System {
             system_fn: Box::new(self),
-            command_buffer: EcsCommandBuffer::new(),
         }
     }
 }

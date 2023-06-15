@@ -1,10 +1,14 @@
 #![warn(clippy::pedantic)]
 
-use tubereng_ecs::system::{Into, System};
+use tubereng_ecs::{
+    system::{Into, System},
+    Ecs,
+};
 
 pub struct Engine {
     application_title: &'static str,
     setup_system: System,
+    ecs: Ecs,
 }
 
 impl Engine {
@@ -14,7 +18,7 @@ impl Engine {
     }
 
     pub fn run_setup_system(&mut self) {
-        self.setup_system.run();
+        self.ecs.run_systems(&[&self.setup_system]);
     }
 }
 
@@ -52,6 +56,7 @@ impl EngineBuilder {
         Engine {
             application_title: self.application_title.unwrap_or("TuberApp"),
             setup_system: self.setup_system.unwrap_or((|| ()).into_system()),
+            ecs: Ecs::new(),
         }
     }
 }

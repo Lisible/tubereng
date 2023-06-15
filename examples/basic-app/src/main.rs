@@ -1,6 +1,6 @@
 #![warn(clippy::pedantic)]
 
-use tubereng::{ecs::commands::EcsCommandBuffer, engine::EngineBuilder, winit::WinitTuberRunner};
+use tubereng::{ecs::commands::CommandBuffer, engine::EngineBuilder, winit::WinitTuberRunner};
 
 fn main() {
     let engine = EngineBuilder::new()
@@ -14,8 +14,8 @@ struct Player;
 struct Enemy;
 struct Health(i32);
 
-fn setup(ecs_command_buffer: &mut EcsCommandBuffer) {
-    ecs_command_buffer.insert((Player, Health(10)));
-    ecs_command_buffer.insert((Enemy, Health(5)));
-    ecs_command_buffer.insert((Enemy, Health(8)));
+fn setup(command_buffer: &mut CommandBuffer) {
+    command_buffer.insert((Player, Health(10)));
+    command_buffer.insert((Enemy, Health(5)));
+    command_buffer.insert((Enemy, Health(8)));
 }

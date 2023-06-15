@@ -5,6 +5,9 @@ use std::{
     collections::HashMap,
 };
 
+use commands::CommandBuffer;
+use system::System;
+
 pub mod commands;
 pub mod system;
 
@@ -15,6 +18,7 @@ type ComponentStore = Vec<Option<Box<dyn Any>>>;
 pub struct Ecs {
     components: HashMap<TypeId, ComponentStore>,
     next_entity_id: EntityId,
+    pending_commands: CommandBuffer,
 }
 impl Ecs {
     #[must_use]
@@ -22,6 +26,7 @@ impl Ecs {
         Self {
             components: HashMap::new(),
             next_entity_id: 0,
+            pending_commands: CommandBuffer::new(),
         }
     }
 
@@ -59,6 +64,20 @@ impl Ecs {
         component_store.resize_with(self.next_entity_id, || None);
         component_store[entity_id] = Some(Box::new(component));
     }
+
+    pub fn run_systems(&mut self, systems: &[&System]) {
+        for system in systems {
+            system.run(&mut self.pending_commands);
+        }
+    }
+
+    pub fn execute_pending_commands(&mut self) {
+        let mut pending_commands = CommandBuffer::new();
+        std::mem::swap(&mut self.pending_commands, &mut pending_commands);
+        for command in pending_commands.iter_mut() {
+            command.apply(self);
+        }
+    }
 }
 
 impl Default for Ecs {
@@ -79,6 +98,8 @@ impl<A: 'static, B: 'static> EntityDefinition for (A, B) {
 
 #[cfg(test)]
 mod tests {
+    use crate::system::Into;
+
     use super::*;
 
     struct Player;
@@ -93,5 +114,23 @@ mod tests {
         ecs.insert((Player, Health(10)));
         ecs.insert((Player, Health(10)));
         assert_eq!(ecs.entity_count(), 3);
+    }
+
+    #[test]
+    fn run_system_adding_entity() {
+        let mut ecs = Ecs::new();
+
+        assert_eq!(ecs.entity_count(), 0);
+        let add_entity = |command_buffer: &mut CommandBuffer| {
+            command_buffer.insert((Player, Health(10)));
+            command_buffer.insert((Player, Health(9)));
+        };
+
+        ecs.run_systems(&[&add_entity.into_system()]);
+        assert_eq!(ecs.pending_commands.len(), 2);
+
+        ecs.execute_pending_commands();
+        assert_eq!(ecs.pending_commands.len(), 0);
+        assert_eq!(ecs.entity_count(), 2);
     }
 }
