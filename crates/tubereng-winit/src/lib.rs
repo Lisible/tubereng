@@ -1,3 +1,4 @@
+use log::info;
 use tubereng_engine::Engine;
 use winit::{
     event::{Event, WindowEvent},
@@ -8,13 +9,21 @@ use winit::{
 pub struct WinitTuberRunner;
 impl WinitTuberRunner {
     pub fn run(mut engine: Engine) {
+        info!("Engine starting up...");
         let event_loop = EventLoop::new();
         let window = WindowBuilder::new()
             .with_title(engine.application_title())
             .build(&event_loop)
             .unwrap();
+        info!(
+            "Created window with title \"{}\"",
+            engine.application_title()
+        );
 
+        info!("Running setup system...");
         engine.run_setup_system();
+
+        info!("Starting main loop...");
         event_loop.run(move |event, _, control_flow| {
             control_flow.set_poll();
             match event {

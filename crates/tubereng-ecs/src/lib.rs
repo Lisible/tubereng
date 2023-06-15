@@ -1,5 +1,7 @@
 #![warn(clippy::pedantic)]
 
+use log::trace;
+use std::fmt::Debug;
 use std::{
     any::{Any, TypeId},
     collections::HashMap,
@@ -38,6 +40,7 @@ impl Ecs {
     fn allocate_entity(&mut self) -> EntityId {
         let id = self.next_entity_id;
         self.next_entity_id += 1;
+        trace!("Allocated entity {}", id);
         id
     }
 
@@ -45,6 +48,7 @@ impl Ecs {
     where
         ED: EntityDefinition,
     {
+        trace!("Inserting entity {:?}", &entity);
         let entity_id = self.allocate_entity();
         entity.write_into_ecs(self, entity_id);
         entity_id
@@ -86,10 +90,10 @@ impl Default for Ecs {
     }
 }
 
-pub trait EntityDefinition {
+pub trait EntityDefinition: Debug {
     fn write_into_ecs(self, ecs: &mut Ecs, entity_id: EntityId);
 }
-impl<A: 'static, B: 'static> EntityDefinition for (A, B) {
+impl<A: 'static + Debug, B: 'static + Debug> EntityDefinition for (A, B) {
     fn write_into_ecs(self, ecs: &mut Ecs, entity_id: EntityId) {
         ecs.write_component(entity_id, self.0);
         ecs.write_component(entity_id, self.1);
@@ -102,7 +106,9 @@ mod tests {
 
     use super::*;
 
+    #[derive(Debug)]
     struct Player;
+    #[derive(Debug)]
     struct Health(usize);
 
     #[test]

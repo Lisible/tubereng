@@ -3,6 +3,7 @@
 use tubereng::{ecs::commands::CommandBuffer, engine::EngineBuilder, winit::WinitTuberRunner};
 
 fn main() {
+    env_logger::init();
     let engine = EngineBuilder::new()
         .with_application_title("Basic Application")
         .with_setup_system(setup)
@@ -10,8 +11,11 @@ fn main() {
     WinitTuberRunner::run(engine);
 }
 
+#[derive(Debug)]
 struct Player;
+#[derive(Debug)]
 struct Enemy;
+#[derive(Debug)]
 struct Health(i32);
 
 fn setup(command_buffer: &mut CommandBuffer) {
