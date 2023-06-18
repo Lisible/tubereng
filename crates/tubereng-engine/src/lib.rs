@@ -1,13 +1,12 @@
 #![warn(clippy::pedantic)]
 
 use tubereng_ecs::{
-    system::{Into, System},
+    system::{Into, System, SystemFn},
     Ecs,
 };
 
 pub struct Engine {
     application_title: &'static str,
-    setup_system: System,
     ecs: Ecs,
 }
 
@@ -18,19 +17,18 @@ impl Engine {
     }
 
     pub fn run_setup_system(&mut self) {
-        self.ecs.run_systems(&[&self.setup_system]);
-        self.ecs.execute_pending_commands();
+        self.ecs.run_setup_system();
     }
 
     pub fn update(&mut self) {
-        self.ecs.run_registered_systems();
+        self.ecs.run_systems();
         self.ecs.execute_pending_commands();
     }
 }
 
 pub struct EngineBuilder {
     application_title: Option<&'static str>,
-    setup_system: Option<System>,
+    setup_system: Option<Box<dyn System>>,
 }
 
 impl EngineBuilder {
@@ -49,20 +47,23 @@ impl EngineBuilder {
     }
 
     #[must_use]
-    pub fn with_setup_system<F, A>(mut self, setup_system: F) -> Self
+    pub fn with_setup_system<S, M>(mut self, system: S) -> Self
     where
-        F: 'static + Into<A>,
+        S: SystemFn<M>,
+        M: 'static,
     {
-        self.setup_system = Some(setup_system.into_system());
+        self.setup_system = Some(Box::new(Into::into(system)));
         self
     }
 
     #[must_use]
     pub fn build(self) -> Engine {
+        let mut ecs = Ecs::new();
+        ecs.register_setup_system(self.setup_system.unwrap_or(Box::new(Into::into(|| {}))));
+
         Engine {
             application_title: self.application_title.unwrap_or("TuberApp"),
-            setup_system: self.setup_system.unwrap_or((|| ()).into_system()),
-            ecs: Ecs::new(),
+            ecs,
         }
     }
 }

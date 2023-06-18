@@ -1,45 +1,52 @@
+use std::{cell::RefCell, rc::Rc};
+
 use crate::{
-    system::{self, System},
+    system::{Into, System},
     Ecs, EntityDefinition,
 };
 
 pub struct CommandBuffer {
-    commands: Vec<Box<dyn Command>>,
+    commands: Rc<RefCell<Vec<Box<dyn Command>>>>,
 }
 
 impl CommandBuffer {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            commands: Vec::new(),
+            commands: Rc::new(RefCell::new(Vec::new())),
         }
     }
 
     pub fn clear(&mut self) {
-        self.commands.clear();
+        self.commands.borrow_mut().clear();
     }
 
-    pub fn insert<ED>(&mut self, entity: ED)
+    pub fn insert<ED>(&self, entity: ED)
     where
         ED: 'static + EntityDefinition,
     {
-        self.commands.push(Box::new(InsertEntity::new(entity)));
+        self.commands
+            .borrow_mut()
+            .push(Box::new(InsertEntity::new(entity)));
     }
 
-    pub fn register_system<S, T>(&mut self, system: S)
+    pub fn register_system<S, M, ST>(&self, system: S)
     where
-        S: system::Into<T>,
+        S: Into<M, SystemType = ST>,
+        ST: System + 'static,
     {
-        self.commands.push(Box::new(RegisterSystem::new(system)));
+        self.commands
+            .borrow_mut()
+            .push(Box::new(RegisterSystem::new(system)));
     }
 
-    pub fn iter_mut(&mut self) -> std::slice::IterMut<Box<dyn Command>> {
-        self.commands.iter_mut()
+    pub fn flush_commands(&mut self) -> Vec<Box<dyn Command>> {
+        self.commands.borrow_mut().drain(..).collect::<Vec<_>>()
     }
 
     #[must_use]
     pub fn len(&self) -> usize {
-        self.commands.len()
+        self.commands.borrow().len()
     }
 
     #[must_use]
@@ -86,16 +93,17 @@ where
 }
 
 pub struct RegisterSystem {
-    system: Option<System>,
+    system: Option<Box<dyn System>>,
 }
 
 impl RegisterSystem {
-    pub fn new<S, T>(system: S) -> Self
+    pub fn new<S, ST, M>(system: S) -> Self
     where
-        S: system::Into<T>,
+        S: Into<M, SystemType = ST>,
+        ST: System + 'static,
     {
         Self {
-            system: Some(system.into_system()),
+            system: Some(Box::new(Into::into(system))),
         }
     }
 }
