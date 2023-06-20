@@ -20,7 +20,6 @@ impl WinitTuberRunner {
             engine.application_title()
         );
 
-        info!("Running setup system...");
         engine.run_setup_system();
 
         info!("Starting main loop...");

@@ -2,8 +2,9 @@
 #![allow(clippy::module_name_repetitions)]
 
 use entity::EntityStore;
+use log::{info, trace};
 use std::fmt::Debug;
-use system::{ExecutionContext, Into, System};
+use system::{ExecutionContext, System, SystemSet};
 
 use commands::CommandBuffer;
 
@@ -18,7 +19,7 @@ pub struct Ecs {
     entity_store: EntityStore,
     pending_commands: CommandBuffer,
     setup_system: Option<Box<dyn System>>,
-    systems: Vec<Box<dyn System>>,
+    system_sets: Vec<SystemSet>,
 }
 impl Ecs {
     #[must_use]
@@ -27,39 +28,40 @@ impl Ecs {
             entity_store: EntityStore::new(),
             pending_commands: CommandBuffer::new(),
             setup_system: None,
-            systems: vec![],
+            system_sets: vec![],
         }
     }
 
     pub fn register_setup_system(&mut self, setup_system: Box<dyn System>) {
+        info!("Registering setup system...");
         self.setup_system = Some(setup_system);
     }
 
-    pub fn register_system<S, M, ST>(&mut self, system: S)
-    where
-        S: Into<M, SystemType = ST>,
-        ST: 'static + System,
-    {
-        self.systems.push(Box::new(Into::into(system)));
+    pub fn register_system_set(&mut self, system_set: SystemSet) {
+        trace!("Registering a system set...");
+        self.system_sets.push(system_set);
     }
 
     pub fn run_setup_system(&mut self) {
+        info!("Running setup system...");
         if let Some(mut setup_system) = self.setup_system.take() {
             let ctx = ExecutionContext {
                 command_buffer: &self.pending_commands,
                 entity_store: &self.entity_store,
             };
-            setup_system.run(&ctx);
+            setup_system.execute(&ctx);
         }
     }
 
     pub fn run_systems(&mut self) {
-        for system in &mut self.systems {
-            let ctx = ExecutionContext {
-                command_buffer: &self.pending_commands,
-                entity_store: &self.entity_store,
-            };
-            system.run(&ctx);
+        for system_set in &mut self.system_sets {
+            for system in system_set.iter_mut() {
+                let ctx = ExecutionContext {
+                    command_buffer: &self.pending_commands,
+                    entity_store: &self.entity_store,
+                };
+                system.execute(&ctx);
+            }
         }
     }
 
@@ -131,7 +133,9 @@ mod tests {
             command_buffer.insert((Player, Health(9)));
         };
 
-        ecs.register_system(add_entity);
+        let mut system_set = SystemSet::new();
+        system_set.add_system(add_entity);
+        ecs.register_system_set(system_set);
         ecs.run_systems();
         assert_eq!(ecs.pending_commands.len(), 2);
 

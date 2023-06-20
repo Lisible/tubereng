@@ -1,7 +1,7 @@
 use std::{cell::RefCell, rc::Rc};
 
 use crate::{
-    system::{Into, System},
+    system::{Into, System, SystemSet},
     Ecs, EntityDefinition,
 };
 
@@ -28,6 +28,12 @@ impl CommandBuffer {
         self.commands
             .borrow_mut()
             .push(Box::new(InsertEntity::new(entity)));
+    }
+
+    pub fn register_system_set(&self, system_set: SystemSet) {
+        self.commands
+            .borrow_mut()
+            .push(Box::new(RegisterSystemSet::new(system_set)));
     }
 
     pub fn register_system<S, M, ST>(&self, system: S)
@@ -92,6 +98,25 @@ where
     }
 }
 
+pub struct RegisterSystemSet {
+    system_set: Option<SystemSet>,
+}
+
+impl RegisterSystemSet {
+    #[must_use]
+    pub fn new(system_set: SystemSet) -> Self {
+        Self {
+            system_set: Some(system_set),
+        }
+    }
+}
+
+impl Command for RegisterSystemSet {
+    fn apply(&mut self, ecs: &mut Ecs) {
+        ecs.register_system_set(self.system_set.take().unwrap());
+    }
+}
+
 pub struct RegisterSystem {
     system: Option<Box<dyn System>>,
 }
@@ -110,7 +135,9 @@ impl RegisterSystem {
 
 impl Command for RegisterSystem {
     fn apply(&mut self, ecs: &mut Ecs) {
-        ecs.register_system(self.system.take().unwrap());
+        let mut system_set = SystemSet::new();
+        system_set.add_system(self.system.take().unwrap());
+        ecs.register_system_set(system_set);
     }
 }
 

@@ -6,13 +6,47 @@ use crate::{
     query::{Query, Q},
 };
 
+pub enum ExecutionPolicy {
+    Sequential,
+    Parallel,
+}
+
+pub struct SystemSet {
+    systems: Vec<Box<dyn System>>,
+}
+
+impl SystemSet {
+    #[must_use]
+    pub fn new() -> Self {
+        Self { systems: vec![] }
+    }
+
+    pub fn add_system<S, ST, M>(&mut self, system: S)
+    where
+        S: Into<M, SystemType = ST>,
+        ST: System + 'static,
+    {
+        self.systems.push(Box::new(Into::into(system)));
+    }
+
+    pub fn iter_mut(&mut self) -> std::slice::IterMut<Box<dyn System>> {
+        self.systems.iter_mut()
+    }
+}
+
+impl Default for SystemSet {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub struct ExecutionContext<'a> {
     pub(crate) command_buffer: &'a CommandBuffer,
     pub(crate) entity_store: &'a EntityStore,
 }
 
 pub trait System {
-    fn run<'a>(&'a mut self, ctx: &'a ExecutionContext<'a>);
+    fn execute<'a>(&'a mut self, ctx: &'a ExecutionContext<'a>);
 }
 
 pub struct Function<F, M>
@@ -27,7 +61,7 @@ impl<F, M> System for Function<F, M>
 where
     F: SystemFn<M>,
 {
-    fn run<'a>(&'a mut self, ctx: &'a ExecutionContext<'a>) {
+    fn execute<'a>(&'a mut self, ctx: &'a ExecutionContext<'a>) {
         let parameters = F::Parameter::fetch(ctx);
         self.system_fn.run(parameters);
     }
@@ -39,8 +73,8 @@ pub trait Into<M> {
 }
 
 impl System for Box<dyn System> {
-    fn run<'a>(&'a mut self, ctx: &'a ExecutionContext<'a>) {
-        self.deref_mut().run(ctx);
+    fn execute<'a>(&'a mut self, ctx: &'a ExecutionContext<'a>) {
+        self.deref_mut().execute(ctx);
     }
 }
 
@@ -159,5 +193,18 @@ where
 
     fn fetch<'a>(execution_context: &'a ExecutionContext<'a>) -> Self::Item<'a> {
         Q::new(execution_context.entity_store)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn system_set_add_system() {
+        let mut system_set = SystemSet::new();
+        system_set.add_system(|| {});
+        system_set.add_system(|_command_buffer: &CommandBuffer| {});
+        assert_eq!(system_set.iter_mut().count(), 2);
     }
 }
