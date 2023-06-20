@@ -95,12 +95,23 @@ impl Default for Ecs {
 pub trait EntityDefinition: Debug {
     fn write_into_entity_store(self, entity_store: &mut EntityStore, entity_id: EntityId);
 }
-impl<A: 'static + Debug, B: 'static + Debug> EntityDefinition for (A, B) {
-    fn write_into_entity_store(self, entity_store: &mut EntityStore, entity_id: EntityId) {
-        entity_store.write_component(entity_id, self.0);
-        entity_store.write_component(entity_id, self.1);
-    }
+
+macro_rules! impl_entity_definition_for_tuples {
+    ($head:ident: $head_i:tt, $($tail:ident: $tail_i:tt,)*) => {
+        impl<$head: 'static + Debug, $($tail: 'static + Debug,)*> EntityDefinition for ($head, $($tail,)*) {
+            fn write_into_entity_store(self, entity_store: &mut EntityStore, entity_id: EntityId) {
+                entity_store.write_component(entity_id, self.$head_i);
+                $(entity_store.write_component(entity_id, self.$tail_i);)*
+            }
+        }
+
+        impl_entity_definition_for_tuples!($($tail: $tail_i,)*);
+    };
+
+    () => {}
 }
+
+impl_entity_definition_for_tuples!(F: 5, E: 4, D: 3, C: 2, B: 1, A: 0,);
 
 #[cfg(test)]
 mod tests {
