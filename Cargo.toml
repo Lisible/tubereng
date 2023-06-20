@@ -14,6 +14,7 @@ members = [
 
 [dependencies]
 tubereng-engine = { path = "crates/tubereng-engine" }
+tubereng-math = { path = "crates/tubereng-math" }
 tubereng-ecs = { path = "crates/tubereng-ecs" }
 tubereng-winit = { path = "crates/tubereng-winit" }
 tubereng-graphics = { path = "crates/tubereng-graphics" }
