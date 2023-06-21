@@ -1,14 +1,16 @@
-pub fn add(left: usize, right: usize) -> usize {
-    left + right
+#[derive(Clone, Copy)]
+pub struct WindowSize {
+    pub width: u32,
+    pub height: u32,
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
+impl WindowSize {
+    pub fn new(width: u32, height: u32) -> Self {
+        Self { width, height }
     }
+}
+
+pub trait Renderer {
+    fn render(&mut self);
+    fn resize(&mut self, new_size: WindowSize);
 }

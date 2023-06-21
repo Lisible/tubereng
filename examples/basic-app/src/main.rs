@@ -13,7 +13,7 @@ fn main() {
         .with_application_title("Basic Application")
         .with_setup_system(setup)
         .build();
-    WinitTuberRunner::run(engine);
+    pollster::block_on(WinitTuberRunner::run(engine));
 }
 
 #[derive(Debug)]

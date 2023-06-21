@@ -1,19 +1,28 @@
 #![warn(clippy::pedantic)]
 
+use log::info;
 use tubereng_ecs::{
     system::{Into, System, SystemFn},
     Ecs,
 };
+use tubereng_graphics::{Renderer, WindowSize};
+use tubereng_graphics_wgpu::WGPURenderer;
 
 pub struct Engine {
     application_title: &'static str,
     ecs: Ecs,
+    renderer: Option<WGPURenderer>,
 }
 
 impl Engine {
     #[must_use]
     pub fn application_title(&self) -> &'static str {
         self.application_title
+    }
+
+    pub fn initialize_renderer(&mut self, renderer: WGPURenderer) {
+        self.renderer = Some(renderer);
+        info!("Renderer initialized");
     }
 
     pub fn run_setup_system(&mut self) {
@@ -23,6 +32,20 @@ impl Engine {
     pub fn update(&mut self) {
         self.ecs.run_systems();
         self.ecs.execute_pending_commands();
+    }
+
+    pub fn render(&mut self) {
+        self.renderer
+            .as_mut()
+            .expect("The renderer is uninitialized")
+            .render();
+    }
+
+    pub fn resize(&mut self, new_size: WindowSize) {
+        self.renderer
+            .as_mut()
+            .expect("The renderer is uninitialized")
+            .resize(new_size);
     }
 }
 
@@ -64,6 +87,7 @@ impl EngineBuilder {
         Engine {
             application_title: self.application_title.unwrap_or("TuberApp"),
             ecs,
+            renderer: None,
         }
     }
 }
