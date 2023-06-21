@@ -6,12 +6,11 @@ use tubereng_ecs::{
     Ecs,
 };
 use tubereng_graphics::{Renderer, WindowSize};
-use tubereng_graphics_wgpu::WGPURenderer;
 
 pub struct Engine {
     application_title: &'static str,
     ecs: Ecs,
-    renderer: Option<WGPURenderer>,
+    renderer: Option<Renderer>,
 }
 
 impl Engine {
@@ -20,7 +19,7 @@ impl Engine {
         self.application_title
     }
 
-    pub fn initialize_renderer(&mut self, renderer: WGPURenderer) {
+    pub fn initialize_renderer(&mut self, renderer: Renderer) {
         self.renderer = Some(renderer);
         info!("Renderer initialized");
     }

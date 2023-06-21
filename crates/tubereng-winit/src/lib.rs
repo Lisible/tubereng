@@ -1,7 +1,6 @@
 use log::info;
 use tubereng_engine::Engine;
-use tubereng_graphics::WindowSize;
-use tubereng_graphics_wgpu::WGPURenderer;
+use tubereng_graphics::{Renderer, WindowSize};
 use winit::{
     event::{Event, WindowEvent},
     event_loop::EventLoop,
@@ -43,7 +42,7 @@ impl WinitTuberRunner {
             engine.application_title()
         );
 
-        let renderer = WGPURenderer::new(window).await;
+        let renderer = Renderer::new(window).await;
         engine.initialize_renderer(renderer);
 
         engine.run_setup_system();

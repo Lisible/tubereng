@@ -8,5 +8,4 @@ edition = "2021"
 [dependencies]
 tubereng-ecs = { path = "../tubereng-ecs" }
 tubereng-graphics = { path = "../tubereng-graphics" }
-tubereng-graphics-wgpu = { path = "../tubereng-graphics-wgpu" }
 log = "0.4"

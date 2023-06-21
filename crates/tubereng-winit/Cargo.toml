@@ -8,7 +8,6 @@ edition = "2021"
 [dependencies]
 tubereng-engine = { path = "../tubereng-engine" }
 tubereng-graphics = { path = "../tubereng-graphics" }
-tubereng-graphics-wgpu = { path = "../tubereng-graphics-wgpu" }
 winit = "0.28"
 log = "0.4"
 cfg-if = "1"
