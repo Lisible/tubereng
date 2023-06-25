@@ -1,5 +1,7 @@
 #![warn(clippy::pedantic)]
 
+use std::collections::HashMap;
+
 use render_graph::{RenderGraph, RenderPass};
 use winit::{dpi::PhysicalSize, window::Window};
 
@@ -25,7 +27,8 @@ pub struct Renderer {
     queue: wgpu::Queue,
     surface_configuration: wgpu::SurfaceConfiguration,
 
-    render_pipeline: wgpu::RenderPipeline,
+    pipelines: HashMap<String, wgpu::RenderPipeline>,
+    shader_modules: HashMap<String, wgpu::ShaderModule>,
 }
 
 impl Renderer {
@@ -88,47 +91,8 @@ impl Renderer {
             source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
         });
 
-        let render_pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("Render Pipeline layout"),
-                bind_group_layouts: &[],
-                push_constant_ranges: &[],
-            });
-
-        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Render Pipeline"),
-            layout: Some(&render_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: "vs_main",
-                buffers: &[],
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: "fs_main",
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: surface_configuration.format,
-                    blend: Some(wgpu::BlendState::REPLACE),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: Some(wgpu::Face::Back),
-                unclipped_depth: false,
-                polygon_mode: wgpu::PolygonMode::Fill,
-                conservative: false,
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState {
-                count: 1,
-                mask: !0,
-                alpha_to_coverage_enabled: false,
-            },
-            multiview: None,
-        });
+        let mut shader_modules = HashMap::new();
+        shader_modules.insert("shader".into(), shader);
 
         Self {
             _window: window,
@@ -137,52 +101,10 @@ impl Renderer {
             device,
             queue,
             surface_configuration,
-            render_pipeline,
+            pipelines: HashMap::new(),
+            shader_modules,
         }
     }
-
-    // pub fn render(&mut self) {
-    //     // TODO add proper error handling
-    //     let output = self.surface.get_current_texture().unwrap();
-    //     let view = output
-    //         .texture
-    //         .create_view(&wgpu::TextureViewDescriptor::default());
-
-    //     let mut encoder = self
-    //         .device
-    //         .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-    //             label: Some("Render Encoder"),
-    //         });
-
-    //     let mut render_graph = RenderGraph::new();
-    //     render_graph.add_render_pass(RenderPass {});
-
-    //     {
-    //         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-    //             label: Some("Render Pass"),
-    //             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-    //                 view: &view,
-    //                 resolve_target: None,
-    //                 ops: wgpu::Operations {
-    //                     load: wgpu::LoadOp::Clear(wgpu::Color {
-    //                         r: 0.1,
-    //                         g: 0.2,
-    //                         b: 0.3,
-    //                         a: 1.0,
-    //                     }),
-    //                     store: true,
-    //                 },
-    //             })],
-    //             depth_stencil_attachment: None,
-    //         });
-
-    //         render_pass.set_pipeline(&self.render_pipeline);
-    //         render_pass.draw(0..3, 0..1);
-    //     }
-
-    //     self.queue.submit(std::iter::once(encoder.finish()));
-    //     output.present();
-    // }
 
     pub fn render(&mut self) {
         // TODO add proper error handling
@@ -198,14 +120,27 @@ impl Renderer {
             });
 
         let mut render_graph = RenderGraph::new();
+        let render_target = render_graph.register_render_target(view);
         RenderPass::new("render_pass", &mut render_graph)
-            .with_pipeline("pipeline")
-            .with_render_target(0)
+            .with_shader("shader")
+            .with_render_target(render_target)
             .dispatch(|rpass| {
                 rpass.draw(0..3, 0..1);
             });
 
-        render_graph.execute(&mut encoder);
+        RenderPass::new("render_pass2", &mut render_graph)
+            .with_shader("shader")
+            .with_render_target(render_target)
+            .dispatch(|rpass| {
+                rpass.draw(0..3, 0..1);
+            });
+
+        render_graph.execute(
+            &mut encoder,
+            &self.device,
+            &self.shader_modules,
+            &mut self.pipelines,
+        );
 
         self.queue.submit(std::iter::once(encoder.finish()));
         output.present();

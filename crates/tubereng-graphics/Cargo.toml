@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 winit = "0.28"
 wgpu = "0.16"
+log = "0.4"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wgpu = { version = "0.16", features = ["webgl"] }
