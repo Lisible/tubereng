@@ -32,7 +32,7 @@ impl<T> Matrix4<T> {
     const COLS: usize = 4;
     const ROWS: usize = 4;
 
-    pub fn with_values(values: [T; 16]) -> Self {
+    pub const fn with_values(values: [T; 16]) -> Self {
         Self { values }
     }
 
@@ -53,6 +53,55 @@ impl<T> Matrix4<T> {
                 U::zero(), U::two() / (top - bottom), U::zero(), -((top + bottom) / (top - bottom)),
                 U::zero(), U::zero(), -U::two() / (far - near), -((far + near) / (far - near)),
                 U::zero(), U::zero(), U::zero(), U::one()
+            ]
+        }
+    }
+
+    #[rustfmt::skip]
+    pub fn new_look_at<U>(eye: Vector3<U>, at: Vector3<U>, up: Vector3<U>) -> Matrix4<U>
+    where
+        U: Copy + Float,
+    {
+        let z_axis = (at - eye).normalized();
+        let x_axis = z_axis.cross(&up).normalized();
+        let y_axis = x_axis.cross(&z_axis);
+        let z_axis = -z_axis;
+
+        Matrix4::with_values([
+            x_axis.x, x_axis.y, x_axis.z, -x_axis.dot(&eye),
+            y_axis.x, y_axis.y, y_axis.z, -y_axis.dot(&eye),
+            z_axis.x, z_axis.y, z_axis.z, -z_axis.dot(&eye),
+            U::zero(), U::zero(), U::zero(), U::one()
+        ])
+    }
+
+    pub fn new_perspective<U>(fov_y: U, aspect: U, near: U, far: U) -> Matrix4<U>
+    where
+        U: Copy + Float,
+    {
+        let top = near * (fov_y.to_radians() / U::two()).tan();
+        let bottom = -top;
+        let right = top * aspect;
+        let left = -right;
+        Self::new_frustum(left, right, bottom, top, near, far)
+    }
+
+    #[rustfmt::skip]
+    pub fn new_frustum<U>(
+        left: U,
+        right: U,
+        bottom: U,
+        top: U,
+        near: U,
+        far: U,
+    ) -> Matrix4<U>
+        where U: Copy + Float {
+        Matrix4 {
+            values: [
+                (U::two() * near) / (right - left), U::zero(), U::zero(), -near * (right + left) / (right - left),
+                U::zero(), (U::two() * near) / (top - bottom), U::zero(), -near * (top + bottom) / (top - bottom),
+                U::zero(), U::zero(), -(far + near) / (far - near), U::two() * far * near / (near - far),
+                U::zero(), U::zero(), -U::one(), U::zero()
             ]
         }
     }

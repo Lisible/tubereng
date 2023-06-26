@@ -1,10 +1,18 @@
 #![warn(clippy::pedantic)]
 
-use std::collections::HashMap;
+use std::{collections::HashMap, f32::consts::PI};
 
+use camera::{Camera, CameraUniform};
 use render_graph::{RenderGraph, RenderPass};
+use tubereng_core::Transform;
+use tubereng_math::{quaternion::Quaternion, vector::Vector3f};
+use wgpu::util::DeviceExt;
 use winit::{dpi::PhysicalSize, window::Window};
 
+#[derive(Debug)]
+pub struct Cube;
+
+pub mod camera;
 pub mod render_graph;
 
 #[derive(Clone, Copy)]
@@ -29,6 +37,13 @@ pub struct Renderer {
 
     pipelines: HashMap<String, wgpu::RenderPipeline>,
     shader_modules: HashMap<String, wgpu::ShaderModule>,
+    vertex_buffer: wgpu::Buffer,
+    vertex_count: u32,
+    camera: Camera,
+    camera_uniform: CameraUniform,
+    camera_buffer: wgpu::Buffer,
+    camera_bind_group_layout: wgpu::BindGroupLayout,
+    camera_bind_group: wgpu::BindGroup,
 }
 
 impl Renderer {
@@ -94,6 +109,55 @@ impl Renderer {
         let mut shader_modules = HashMap::new();
         shader_modules.insert("shader".into(), shader);
 
+        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: None,
+            contents: bytemuck::cast_slice(VERTICES),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+        let vertex_count = VERTICES.len() as u32;
+
+        let camera = Camera::new(
+            (0.0, 1.0, 2.0).into(),
+            (0.0, 0.0, 0.0).into(),
+            (0.0, 1.0, 0.0).into(),
+            800.0 / 600.0,
+            45.0,
+            0.1,
+            100.0,
+        );
+        let mut camera_uniform = CameraUniform::new();
+        camera_uniform.set_view_projection_matrix(camera.projection_matrix());
+
+        let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("camera"),
+            contents: bytemuck::cast_slice(&[camera_uniform]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let camera_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("camera_bind_group_layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            });
+
+        let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("camera_bind_group"),
+            layout: &camera_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: camera_buffer.as_entire_binding(),
+            }],
+        });
+
         Self {
             _window: window,
             size,
@@ -103,12 +167,22 @@ impl Renderer {
             surface_configuration,
             pipelines: HashMap::new(),
             shader_modules,
+            vertex_buffer,
+            vertex_count,
+            camera,
+            camera_uniform,
+            camera_buffer,
+            camera_bind_group_layout,
+            camera_bind_group,
         }
     }
 
     pub fn render(&mut self) {
         // TODO add proper error handling
-        let output = self.surface.get_current_texture().unwrap();
+        let output = self
+            .surface
+            .get_current_texture()
+            .expect("Couldn't get surface texture");
         let view = output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
@@ -121,18 +195,19 @@ impl Renderer {
 
         let mut render_graph = RenderGraph::new();
         let render_target = render_graph.register_render_target(view);
+        let vertex_count = self.vertex_count;
         RenderPass::new("render_pass", &mut render_graph)
             .with_shader("shader")
             .with_render_target(render_target)
-            .dispatch(|rpass| {
-                rpass.draw(0..3, 0..1);
+            .dispatch(move |rpass| {
+                rpass.draw(0..vertex_count, 0..1);
             });
 
         RenderPass::new("render_pass2", &mut render_graph)
             .with_shader("shader")
             .with_render_target(render_target)
-            .dispatch(|rpass| {
-                rpass.draw(0..3, 0..1);
+            .dispatch(move |rpass| {
+                rpass.draw(0..vertex_count, 0..1);
             });
 
         render_graph.execute(
@@ -140,6 +215,9 @@ impl Renderer {
             &self.device,
             &self.shader_modules,
             &mut self.pipelines,
+            &self.vertex_buffer,
+            &self.camera_bind_group_layout,
+            &self.camera_bind_group,
         );
 
         self.queue.submit(std::iter::once(encoder.finish()));
@@ -158,3 +236,38 @@ impl Renderer {
             .configure(&self.device, &self.surface_configuration);
     }
 }
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+struct Vertex {
+    position: [f32; 3],
+    color: [f32; 3],
+}
+
+impl Vertex {
+    const ATTRIBUTES: [wgpu::VertexAttribute; 2] =
+        wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3];
+
+    fn buffer_layout() -> wgpu::VertexBufferLayout<'static> {
+        wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &Self::ATTRIBUTES,
+        }
+    }
+}
+
+const VERTICES: &[Vertex] = &[
+    Vertex {
+        position: [0.0, 0.5, 0.0],
+        color: [1.0, 0.0, 0.0],
+    },
+    Vertex {
+        position: [-0.5, -0.5, 0.0],
+        color: [0.0, 1.0, 0.0],
+    },
+    Vertex {
+        position: [0.5, -0.5, 0.0],
+        color: [0.0, 0.0, 1.0],
+    },
+];

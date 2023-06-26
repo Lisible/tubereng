@@ -1,9 +1,17 @@
 #![warn(clippy::pedantic)]
 #![allow(clippy::needless_pass_by_value)]
 
+use std::f32::consts::PI;
+
 use tubereng::{
+    core::Transform,
     ecs::{commands::CommandBuffer, query::Q},
     engine::EngineBuilder,
+    graphics::{
+        camera::{ActiveCamera, Camera},
+        Cube,
+    },
+    math::{quaternion::Quaternion, vector::Vector3f},
     winit::WinitTuberRunner,
 };
 
@@ -16,27 +24,13 @@ fn main() {
     pollster::block_on(WinitTuberRunner::run(engine));
 }
 
-#[derive(Debug)]
-struct Player;
-#[derive(Debug)]
-struct Enemy;
-#[derive(Debug)]
-struct Health(i32);
-
 fn setup(command_buffer: &CommandBuffer) {
-    command_buffer.insert((Player, Health(10)));
-    command_buffer.insert((Player, Health(9)));
-    command_buffer.insert((Player, Health(4)));
-    command_buffer.insert((Enemy, Health(5)));
-    command_buffer.insert((Enemy, Health(8)));
-    command_buffer.register_system(log_player_health);
-}
-
-fn log_player_health(player_healths: Q<(&Player, &mut Health)>, healths: Q<(&mut Health,)>) {
-    for (_, health) in player_healths.iter() {
-        println!("Player health: {}", health.0);
-    }
-    for (health,) in healths.iter() {
-        println!("Entity health: {}", health.0);
-    }
+    command_buffer.insert((
+        Cube,
+        Transform {
+            translation: Vector3f::new(0.0, 0.0, 0.0),
+            scale: Vector3f::new(1.0, 1.0, 1.0),
+            rotation: Quaternion::new(1.0, Vector3f::new(0.0, 0.0, 0.0)),
+        },
+    ));
 }

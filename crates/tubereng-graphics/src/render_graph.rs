@@ -1,6 +1,8 @@
 use log::debug;
 use std::collections::HashMap;
 
+use crate::Vertex;
+
 #[derive(Clone, Copy, Debug)]
 pub struct RenderTargetId(usize);
 
@@ -32,6 +34,9 @@ impl RenderGraph {
         device: &wgpu::Device,
         shader_modules: &HashMap<String, wgpu::ShaderModule>,
         pipelines: &mut HashMap<String, wgpu::RenderPipeline>,
+        vertex_buffer: &wgpu::Buffer,
+        camera_bind_group_layout: &wgpu::BindGroupLayout,
+        camera_bind_group: &wgpu::BindGroup,
     ) {
         for render_pass in &self.render_passes {
             let mut wgpu_render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -50,12 +55,18 @@ impl RenderGraph {
             let pass_identifier = render_pass.identifier.to_string();
             if !pipelines.contains_key(&pass_identifier) {
                 debug!("Caching pipeline for pass {}", pass_identifier);
-                let pipeline =
-                    self.create_pipeline_for_pass(&render_pass, &device, &shader_modules);
+                let pipeline = self.create_pipeline_for_pass(
+                    &render_pass,
+                    &device,
+                    &shader_modules,
+                    camera_bind_group_layout,
+                );
                 pipelines.insert(render_pass.identifier.into(), pipeline);
             }
 
             wgpu_render_pass.set_pipeline(&pipelines[render_pass.identifier]);
+            wgpu_render_pass.set_bind_group(0, camera_bind_group, &[]);
+            wgpu_render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
             (render_pass.dispatch_fn)(&mut wgpu_render_pass);
         }
     }
@@ -65,11 +76,12 @@ impl RenderGraph {
         render_pass: &RenderPass,
         device: &wgpu::Device,
         shader_modules: &HashMap<String, wgpu::ShaderModule>,
+        camera_bind_group_layout: &wgpu::BindGroupLayout,
     ) -> wgpu::RenderPipeline {
         let shader_module = &shader_modules[render_pass.shader_identifier];
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some(&format!("{}_pipeline_layout", render_pass.identifier)),
-            bind_group_layouts: &[],
+            bind_group_layouts: &[camera_bind_group_layout],
             push_constant_ranges: &[],
         });
 
@@ -79,7 +91,7 @@ impl RenderGraph {
             vertex: wgpu::VertexState {
                 module: shader_module,
                 entry_point: "vs_main",
-                buffers: &[],
+                buffers: &[Vertex::buffer_layout()],
             },
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleList,

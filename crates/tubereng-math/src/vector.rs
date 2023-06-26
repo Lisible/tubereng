@@ -186,6 +186,23 @@ struct_vec!(Vector2: "({}, {})", (x: T => 0, y: T => 1,));
 struct_vec!(Vector3: "({}, {}, {})", (x: T => 0, y: T => 1, z: T => 2,));
 struct_vec!(Vector4: "({}, {}, {}, {})", (x: T => 0, y: T => 1, z: T => 2, w: T => 3,));
 
+impl<T> Vector3<T>
+where
+    T: Copy + Float,
+{
+    pub fn cross(&self, other: &Vector3<T>) -> Vector3<T> {
+        Vector3::new(
+            self.y * other.z - self.z * other.y,
+            self.z * other.x - self.x * other.z,
+            self.x * other.y - self.y * other.x,
+        )
+    }
+
+    pub fn dot(&self, other: &Vector3<T>) -> T {
+        self.x * other.x + self.y * other.y + self.z * other.z
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -338,6 +355,18 @@ mod tests {
         assert_float_absolute_eq!(normalized.x, 0.26, 0.01);
         assert_float_absolute_eq!(normalized.y, 0.53, 0.01);
         assert_float_absolute_eq!(normalized.z, 0.80, 0.01);
+    }
+
+    #[test]
+    fn cross_vec3() {
+        let a = Vector3::new(1.0, 2.0, 3.0);
+        let b = Vector3::new(4.0, 5.0, 6.0);
+
+        let result = a.cross(&b);
+
+        assert_float_absolute_eq!(result.x, -3.0, 0.01);
+        assert_float_absolute_eq!(result.y, 6.0, 0.01);
+        assert_float_absolute_eq!(result.z, -3.0, 0.01);
     }
 
     #[test]
