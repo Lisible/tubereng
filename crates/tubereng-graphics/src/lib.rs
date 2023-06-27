@@ -213,6 +213,7 @@ impl Renderer {
         render_graph.execute(
             &mut encoder,
             &self.device,
+            &self.surface_configuration,
             &self.shader_modules,
             &mut self.pipelines,
             &self.vertex_buffer,

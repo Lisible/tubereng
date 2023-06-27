@@ -32,6 +32,7 @@ impl RenderGraph {
         &mut self,
         encoder: &mut wgpu::CommandEncoder,
         device: &wgpu::Device,
+        surface_configuration: &wgpu::SurfaceConfiguration,
         shader_modules: &HashMap<String, wgpu::ShaderModule>,
         pipelines: &mut HashMap<String, wgpu::RenderPipeline>,
         vertex_buffer: &wgpu::Buffer,
@@ -56,6 +57,7 @@ impl RenderGraph {
             if !pipelines.contains_key(&pass_identifier) {
                 debug!("Caching pipeline for pass {}", pass_identifier);
                 let pipeline = self.create_pipeline_for_pass(
+                    surface_configuration,
                     &render_pass,
                     &device,
                     &shader_modules,
@@ -73,6 +75,7 @@ impl RenderGraph {
 
     fn create_pipeline_for_pass(
         &self,
+        surface_configuration: &wgpu::SurfaceConfiguration,
         render_pass: &RenderPass,
         device: &wgpu::Device,
         shader_modules: &HashMap<String, wgpu::ShaderModule>,
@@ -112,7 +115,7 @@ impl RenderGraph {
                 module: shader_module,
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: wgpu::TextureFormat::Bgra8UnormSrgb,
+                    format: surface_configuration.format,
                     blend: Some(wgpu::BlendState::REPLACE),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
