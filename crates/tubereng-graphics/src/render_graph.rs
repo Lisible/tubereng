@@ -1,7 +1,7 @@
 use log::debug;
 use std::collections::HashMap;
 
-use crate::{geometry::Vertex, DrawCommand, MeshUniform};
+use crate::{geometry::Vertex, DrawCommand, RenderingContext};
 
 #[derive(Clone, Copy, Debug)]
 pub struct RenderTargetId(usize);
@@ -28,57 +28,50 @@ impl RenderGraph {
         RenderTargetId(self.render_targets.len() - 1)
     }
 
-    pub fn execute(
-        &mut self,
-        encoder: &mut wgpu::CommandEncoder,
-        device: &wgpu::Device,
-        surface_configuration: &wgpu::SurfaceConfiguration,
-        shader_modules: &HashMap<String, wgpu::ShaderModule>,
-        pipelines: &mut HashMap<String, wgpu::RenderPipeline>,
-        camera_bind_group_layout: &wgpu::BindGroupLayout,
-        camera_bind_group: &wgpu::BindGroup,
-        mesh_bind_group_layout: &wgpu::BindGroupLayout,
-        mesh_bind_group: &wgpu::BindGroup,
-        vertex_buffers: &Vec<wgpu::Buffer>,
-        index_buffers: &Vec<wgpu::Buffer>,
-        draw_commands: &Vec<DrawCommand>,
-    ) {
+    pub fn execute(&mut self, ctx: &mut RenderingContext) {
         for render_pass in &self.render_passes {
-            let mut wgpu_render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some(render_pass.identifier),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &self.render_targets[render_pass.render_targets[0].0],
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: true,
-                    },
-                })],
-                depth_stencil_attachment: None,
-            });
+            let mut wgpu_render_pass =
+                ctx.command_encoder
+                    .begin_render_pass(&wgpu::RenderPassDescriptor {
+                        label: Some(render_pass.identifier),
+                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                            view: &self.render_targets[render_pass.render_targets[0].0],
+                            resolve_target: None,
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Load,
+                                store: true,
+                            },
+                        })],
+                        depth_stencil_attachment: None,
+                    });
 
             let pass_identifier = render_pass.identifier.to_string();
-            if !pipelines.contains_key(&pass_identifier) {
+            if !ctx.pipelines.contains_key(&pass_identifier) {
                 debug!("Caching pipeline for pass {}", pass_identifier);
-                let pipeline = self.create_pipeline_for_pass(
-                    surface_configuration,
-                    &render_pass,
-                    &device,
-                    &shader_modules,
-                    camera_bind_group_layout,
-                    mesh_bind_group_layout,
+                let pipeline = Self::create_pipeline_for_pass(
+                    ctx.surface_configuration,
+                    render_pass,
+                    ctx.device,
+                    ctx.shader_modules,
+                    ctx.camera_bind_group_layout,
+                    ctx.mesh_bind_group_layout,
                 );
-                pipelines.insert(render_pass.identifier.into(), pipeline);
+                ctx.pipelines
+                    .insert(render_pass.identifier.into(), pipeline);
             }
 
-            wgpu_render_pass.set_pipeline(&pipelines[render_pass.identifier]);
-            wgpu_render_pass.set_bind_group(0, camera_bind_group, &[]);
-            for (i, draw_command) in draw_commands.iter().enumerate() {
-                wgpu_render_pass.set_bind_group(1, mesh_bind_group, &[(i * 256) as u32]);
+            wgpu_render_pass.set_pipeline(&ctx.pipelines[render_pass.identifier]);
+            wgpu_render_pass.set_bind_group(0, ctx.camera_bind_group, &[]);
+            for (i, draw_command) in ctx.draw_commands.iter().enumerate() {
+                wgpu_render_pass.set_bind_group(
+                    1,
+                    ctx.mesh_bind_group,
+                    &[u32::try_from(i * 256).expect("Bind group offset is overflowing u32")],
+                );
                 wgpu_render_pass
-                    .set_vertex_buffer(0, vertex_buffers[draw_command.vertex_buffer].slice(..));
+                    .set_vertex_buffer(0, ctx.vertex_buffers[draw_command.vertex_buffer].slice(..));
                 wgpu_render_pass.set_index_buffer(
-                    index_buffers[draw_command.index_buffer].slice(..),
+                    ctx.index_buffers[draw_command.index_buffer].slice(..),
                     wgpu::IndexFormat::Uint16,
                 );
                 (render_pass.dispatch_fn)(&mut wgpu_render_pass, draw_command);
@@ -87,7 +80,6 @@ impl RenderGraph {
     }
 
     fn create_pipeline_for_pass(
-        &self,
         surface_configuration: &wgpu::SurfaceConfiguration,
         render_pass: &RenderPass,
         device: &wgpu::Device,
@@ -145,11 +137,12 @@ impl Default for RenderGraph {
     }
 }
 
+type BoxedRenderPassDispatchFn = Box<dyn Fn(&mut wgpu::RenderPass, &DrawCommand)>;
 pub struct RenderPass {
     identifier: &'static str,
     shader_identifier: &'static str,
     render_targets: Vec<RenderTargetId>,
-    dispatch_fn: Box<dyn Fn(&mut wgpu::RenderPass, &DrawCommand)>,
+    dispatch_fn: BoxedRenderPassDispatchFn,
 }
 
 impl RenderPass {

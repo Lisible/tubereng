@@ -1,6 +1,7 @@
 #![warn(clippy::pedantic)]
+#![allow(clippy::module_name_repetitions)]
 
-use std::collections::HashMap;
+use std::{collections::HashMap, future::Future};
 
 use camera::{ActiveCamera, Camera, CameraUniform, OPENGL_TO_WGPU_MATRIX};
 use geometry::Model;
@@ -65,39 +66,16 @@ impl Renderer {
         // Safety: WGPURenderer owns both the window and the surface, so the window will live as
         // long as the surface
         let surface = unsafe { instance.create_surface(&window) }.expect("Surface creation failed");
-
-        let adapter = instance
-            .request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::default(),
-                force_fallback_adapter: false,
-                compatible_surface: Some(&surface),
-            })
+        let adapter = Self::request_adapter(&instance, &surface)
             .await
-            .expect("No video adapter found");
+            .expect("Adapter not found");
 
-        let (device, queue) = adapter
-            .request_device(
-                &wgpu::DeviceDescriptor {
-                    label: None,
-                    features: wgpu::Features::empty(),
-                    limits: if cfg!(target_arch = "wasm32") {
-                        wgpu::Limits::downlevel_webgl2_defaults()
-                    } else {
-                        wgpu::Limits::default()
-                    },
-                },
-                None,
-            )
+        let (device, queue) = Self::request_device(&adapter)
             .await
             .expect("Couldn't request device");
 
         let surface_capabilities = surface.get_capabilities(&adapter);
-        let surface_format = surface_capabilities
-            .formats
-            .iter()
-            .copied()
-            .find(wgpu::TextureFormat::is_srgb)
-            .unwrap_or(surface_capabilities.formats[0]);
+        let surface_format = Self::get_compatible_surface_format(&surface_capabilities);
         let surface_configuration = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: surface_format,
@@ -132,37 +110,8 @@ impl Renderer {
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::UNIFORM,
             mapped_at_creation: false,
         });
-        let mesh_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-            label: Some("mesh_bind_group_layout"),
-            entries: &[BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: true,
-                    min_binding_size: wgpu::BufferSize::new(
-                        std::mem::size_of::<MeshUniform>() as wgpu::BufferAddress
-                    ),
-                },
-                count: None,
-            }],
-        });
-
-        let mesh_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("mesh_bind_group"),
-            layout: &mesh_bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                    buffer: &mesh_uniform_buffer,
-                    offset: 0,
-                    size: wgpu::BufferSize::new(
-                        std::mem::size_of::<MeshUniform>() as wgpu::BufferAddress
-                    ),
-                }),
-            }],
-        });
-
+        let (mesh_bind_group_layout, mesh_bind_group) =
+            Self::create_mesh_bind_group(&device, &mesh_uniform_buffer);
         let mut vertex_buffers = vec![];
         let mut index_buffers = vec![];
         let mut models = HashMap::new();
@@ -192,6 +141,84 @@ impl Renderer {
             mesh_bind_group_layout,
             mesh_bind_group,
         }
+    }
+
+    fn request_adapter(
+        instance: &wgpu::Instance,
+        surface: &wgpu::Surface,
+    ) -> impl Future<Output = Option<wgpu::Adapter>> {
+        instance.request_adapter(&wgpu::RequestAdapterOptions {
+            power_preference: wgpu::PowerPreference::default(),
+            force_fallback_adapter: false,
+            compatible_surface: Some(surface),
+        })
+    }
+
+    fn request_device(
+        adapter: &wgpu::Adapter,
+    ) -> impl Future<Output = Result<(wgpu::Device, wgpu::Queue), wgpu::RequestDeviceError>> + Send
+    {
+        adapter.request_device(
+            &wgpu::DeviceDescriptor {
+                label: None,
+                features: wgpu::Features::empty(),
+                limits: if cfg!(target_arch = "wasm32") {
+                    wgpu::Limits::downlevel_webgl2_defaults()
+                } else {
+                    wgpu::Limits::default()
+                },
+            },
+            None,
+        )
+    }
+
+    fn get_compatible_surface_format(
+        surface_capabilities: &wgpu::SurfaceCapabilities,
+    ) -> wgpu::TextureFormat {
+        surface_capabilities
+            .formats
+            .iter()
+            .copied()
+            .find(wgpu::TextureFormat::is_srgb)
+            .unwrap_or(surface_capabilities.formats[0])
+    }
+
+    fn create_mesh_bind_group(
+        device: &wgpu::Device,
+        mesh_uniform_buffer: &wgpu::Buffer,
+    ) -> (wgpu::BindGroupLayout, wgpu::BindGroup) {
+        let mesh_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            label: Some("mesh_bind_group_layout"),
+            entries: &[BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: true,
+                    min_binding_size: wgpu::BufferSize::new(
+                        std::mem::size_of::<MeshUniform>() as wgpu::BufferAddress
+                    ),
+                },
+                count: None,
+            }],
+        });
+
+        let mesh_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("mesh_bind_group"),
+            layout: &mesh_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                    buffer: mesh_uniform_buffer,
+                    offset: 0,
+                    size: wgpu::BufferSize::new(
+                        std::mem::size_of::<MeshUniform>() as wgpu::BufferAddress
+                    ),
+                }),
+            }],
+        });
+
+        (mesh_bind_group_layout, mesh_bind_group)
     }
 
     fn create_camera_bind_group(
@@ -286,23 +313,10 @@ impl Renderer {
             .with_shader("shader")
             .with_render_target(render_target)
             .dispatch(move |rpass, draw_command| {
-                rpass.draw_indexed(0..draw_command.element_count as u32, 0, 0..1);
+                rpass.draw_indexed(0..draw_command.element_count, 0, 0..1);
             });
 
-        render_graph.execute(
-            &mut encoder,
-            &self.device,
-            &self.surface_configuration,
-            &self.shader_modules,
-            &mut self.pipelines,
-            &self.camera_bind_group_layout,
-            &self.camera_bind_group,
-            &self.mesh_bind_group_layout,
-            &self.mesh_bind_group,
-            &self.vertex_buffers,
-            &self.index_buffers,
-            &self.draw_commands,
-        );
+        render_graph.execute(&mut RenderingContext::new(&mut encoder, self));
 
         self.queue.submit(std::iter::once(encoder.finish()));
         output.present();
@@ -325,7 +339,7 @@ impl Renderer {
 pub struct DrawCommand {
     vertex_buffer: usize,
     index_buffer: usize,
-    element_count: usize,
+    element_count: u32,
 }
 
 #[repr(C)]
@@ -333,4 +347,38 @@ pub struct DrawCommand {
 pub struct MeshUniform {
     world_transform: [[f32; 4]; 4],
     _padding: [u64; 24],
+}
+
+pub struct RenderingContext<'a> {
+    command_encoder: &'a mut wgpu::CommandEncoder,
+    pipelines: &'a mut HashMap<String, wgpu::RenderPipeline>,
+    draw_commands: &'a Vec<DrawCommand>,
+    device: &'a wgpu::Device,
+    vertex_buffers: &'a Vec<wgpu::Buffer>,
+    index_buffers: &'a Vec<wgpu::Buffer>,
+    surface_configuration: &'a wgpu::SurfaceConfiguration,
+    shader_modules: &'a HashMap<String, wgpu::ShaderModule>,
+    camera_bind_group_layout: &'a wgpu::BindGroupLayout,
+    camera_bind_group: &'a wgpu::BindGroup,
+    mesh_bind_group_layout: &'a wgpu::BindGroupLayout,
+    mesh_bind_group: &'a wgpu::BindGroup,
+}
+
+impl<'a> RenderingContext<'a> {
+    pub fn new(encoder: &'a mut wgpu::CommandEncoder, renderer: &'a mut Renderer) -> Self {
+        Self {
+            command_encoder: encoder,
+            pipelines: &mut renderer.pipelines,
+            draw_commands: &renderer.draw_commands,
+            device: &renderer.device,
+            vertex_buffers: &renderer.vertex_buffers,
+            index_buffers: &renderer.index_buffers,
+            surface_configuration: &renderer.surface_configuration,
+            shader_modules: &renderer.shader_modules,
+            camera_bind_group_layout: &renderer.camera_bind_group_layout,
+            camera_bind_group: &renderer.camera_bind_group,
+            mesh_bind_group_layout: &renderer.mesh_bind_group_layout,
+            mesh_bind_group: &renderer.mesh_bind_group,
+        }
+    }
 }

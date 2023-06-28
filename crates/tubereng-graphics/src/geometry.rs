@@ -74,7 +74,7 @@ impl Model {
 pub struct Mesh {
     pub(crate) vertex_buffer: usize,
     pub(crate) index_buffer: usize,
-    pub(crate) element_count: usize,
+    pub(crate) element_count: u32,
 }
 
 #[repr(C)]
