@@ -115,6 +115,7 @@ impl<'a, T: 'static> Argument<'a> for &mut T {
         entity_store.query_component_mut(index)
     }
 }
+
 #[cfg(test)]
 mod tests {
     use crate::Ecs;

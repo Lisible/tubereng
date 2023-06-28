@@ -53,6 +53,7 @@ pub struct CameraUniform {
 }
 
 impl CameraUniform {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             view_projection_matrix: Matrix4f::identity().into(),

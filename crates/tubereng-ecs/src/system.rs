@@ -1,15 +1,15 @@
-use std::{marker::PhantomData, ops::DerefMut};
+use std::{
+    cell::{Ref, RefMut},
+    marker::PhantomData,
+    ops::DerefMut,
+};
 
 use crate::{
     commands::CommandBuffer,
     entity::EntityStore,
     query::{Query, Q},
+    resource::Resources,
 };
-
-pub enum ExecutionPolicy {
-    Sequential,
-    Parallel,
-}
 
 pub struct SystemSet {
     systems: Vec<Box<dyn System>>,
@@ -43,6 +43,7 @@ impl Default for SystemSet {
 pub struct ExecutionContext<'a> {
     pub(crate) command_buffer: &'a CommandBuffer,
     pub(crate) entity_store: &'a EntityStore,
+    pub(crate) resources: &'a Resources,
 }
 
 pub trait System {
@@ -182,6 +183,36 @@ impl Parameter for &CommandBuffer {
     type Item<'a> = &'a CommandBuffer;
     fn fetch<'a>(execution_context: &'a ExecutionContext<'a>) -> Self::Item<'a> {
         execution_context.command_buffer
+    }
+}
+
+pub struct Res<'a, T>(pub Ref<'a, T>);
+impl<T> Parameter for Res<'_, T>
+where
+    T: 'static,
+{
+    type Item<'a> = Res<'a, T>;
+    fn fetch<'a>(execution_context: &'a ExecutionContext<'a>) -> Self::Item<'a> {
+        Res(execution_context
+            .resources
+            .resource::<T>()
+            .expect("Resource not found"))
+    }
+}
+
+pub struct ResMut<'a, T>(pub RefMut<'a, T>);
+impl<T> Parameter for ResMut<'_, T>
+where
+    T: 'static,
+{
+    type Item<'a> = ResMut<'a, T>;
+    fn fetch<'c>(execution_context: &'c ExecutionContext<'c>) -> Self::Item<'c> {
+        ResMut(
+            execution_context
+                .resources
+                .resource_mut::<T>()
+                .expect("Resource not found"),
+        )
     }
 }
 

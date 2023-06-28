@@ -3,7 +3,12 @@
 
 use entity::EntityStore;
 use log::{info, trace};
-use std::fmt::Debug;
+use resource::Resources;
+use std::{
+    any::Any,
+    cell::{Ref, RefMut},
+    fmt::Debug,
+};
 use system::{ExecutionContext, System, SystemSet};
 
 use commands::CommandBuffer;
@@ -11,6 +16,7 @@ use commands::CommandBuffer;
 pub mod commands;
 pub mod entity;
 pub mod query;
+pub mod resource;
 pub mod system;
 
 pub type EntityId = usize;
@@ -20,6 +26,7 @@ pub struct Ecs {
     pending_commands: CommandBuffer,
     setup_system: Option<Box<dyn System>>,
     system_sets: Vec<SystemSet>,
+    resources: Resources,
 }
 impl Ecs {
     #[must_use]
@@ -29,6 +36,7 @@ impl Ecs {
             pending_commands: CommandBuffer::new(),
             setup_system: None,
             system_sets: vec![],
+            resources: Resources::new(),
         }
     }
 
@@ -53,6 +61,7 @@ impl Ecs {
             let ctx = ExecutionContext {
                 command_buffer: &self.pending_commands,
                 entity_store: &self.entity_store,
+                resources: &self.resources,
             };
             setup_system.execute(&ctx);
         }
@@ -64,6 +73,7 @@ impl Ecs {
                 let ctx = ExecutionContext {
                     command_buffer: &self.pending_commands,
                     entity_store: &self.entity_store,
+                    resources: &self.resources,
                 };
                 system.execute(&ctx);
             }
@@ -80,6 +90,29 @@ impl Ecs {
         ED: EntityDefinition,
     {
         self.entity_store.insert(entity)
+    }
+
+    pub fn insert_resource<R>(&mut self, resource: R)
+    where
+        R: Any,
+    {
+        self.resources.insert(resource);
+    }
+
+    #[must_use]
+    pub fn resource<R>(&self) -> Option<Ref<R>>
+    where
+        R: Any,
+    {
+        self.resources.resource::<R>()
+    }
+
+    #[must_use]
+    pub fn resource_mut<R>(&self) -> Option<RefMut<R>>
+    where
+        R: Any,
+    {
+        self.resources.resource_mut::<R>()
     }
 
     pub fn execute_pending_commands(&mut self) {
@@ -121,6 +154,8 @@ impl_entity_definition_for_tuples!(F: 5, E: 4, D: 3, C: 2, B: 1, A: 0,);
 #[cfg(test)]
 mod tests {
 
+    use crate::system::ResMut;
+
     use super::*;
 
     #[derive(Debug)]
@@ -158,5 +193,24 @@ mod tests {
         ecs.execute_pending_commands();
         assert_eq!(ecs.pending_commands.len(), 0);
         assert_eq!(ecs.entity_count(), 2);
+    }
+
+    #[test]
+    fn store_resource() {
+        struct Turn(pub u32);
+        let mut ecs = Ecs::new();
+        ecs.insert_resource(Turn(0));
+
+        let increment_turn_system = |res_turn: ResMut<Turn>| {
+            let ResMut(mut turn) = res_turn;
+            turn.0 += 1;
+        };
+        let mut system_set = SystemSet::new();
+        system_set.add_system(increment_turn_system);
+        ecs.register_system_set(system_set);
+        ecs.run_systems();
+
+        let turn = ecs.resource::<Turn>().unwrap();
+        assert_eq!(turn.0, 1);
     }
 }
