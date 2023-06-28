@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 tubereng-core = { path = "../tubereng-core" }
 tubereng-math = { path = "../tubereng-math" }
+tubereng-ecs = { path = "../tubereng-ecs" }
 winit = "0.28"
 wgpu = "0.16"
 bytemuck = { version = "1.12", features = [ "derive" ] }

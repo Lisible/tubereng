@@ -32,6 +32,11 @@ impl Ecs {
         }
     }
 
+    #[must_use]
+    pub fn entity_store(&self) -> &EntityStore {
+        &self.entity_store
+    }
+
     pub fn register_setup_system(&mut self, setup_system: Box<dyn System>) {
         info!("Registering setup system...");
         self.setup_system = Some(setup_system);

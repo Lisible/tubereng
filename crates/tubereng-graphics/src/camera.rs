@@ -1,7 +1,4 @@
-use tubereng_math::{
-    matrix::{Identity, Matrix4f},
-    vector::Vector3f,
-};
+use tubereng_math::matrix::{Identity, Matrix4f};
 
 #[rustfmt::skip]
 pub const OPENGL_TO_WGPU_MATRIX: Matrix4f = Matrix4f::with_values([
@@ -13,41 +10,34 @@ pub const OPENGL_TO_WGPU_MATRIX: Matrix4f = Matrix4f::with_values([
 
 #[derive(Debug)]
 pub struct Camera {
-    eye: Vector3f,
-    target: Vector3f,
-    up: Vector3f,
-    aspect: f32,
-    fovy: f32,
-    znear: f32,
-    zfar: f32,
+    projection_matrix: Matrix4f,
 }
 
 impl Camera {
-    pub fn new(
-        eye: Vector3f,
-        target: Vector3f,
-        up: Vector3f,
-        aspect: f32,
-        fovy: f32,
-        znear: f32,
-        zfar: f32,
-    ) -> Self {
+    #[must_use]
+    pub fn new_perspective(fov_y: f32, aspect: f32, near: f32, far: f32) -> Self {
         Self {
-            eye,
-            target,
-            up,
-            aspect,
-            fovy,
-            znear,
-            zfar,
+            projection_matrix: Matrix4f::new_perspective(fov_y, aspect, near, far),
         }
     }
 
     #[must_use]
-    pub fn projection_matrix(&self) -> Matrix4f {
-        let view = Matrix4f::new_look_at(self.eye, self.target, self.up);
-        let projection = Matrix4f::new_perspective(self.fovy, self.aspect, self.znear, self.zfar);
-        OPENGL_TO_WGPU_MATRIX * projection * view
+    pub fn new_orthographic(
+        left: f32,
+        right: f32,
+        bottom: f32,
+        top: f32,
+        near: f32,
+        far: f32,
+    ) -> Self {
+        Self {
+            projection_matrix: Matrix4f::new_orthographic(left, right, bottom, top, near, far),
+        }
+    }
+
+    #[must_use]
+    pub fn projection_matrix(&self) -> &Matrix4f {
+        &self.projection_matrix
     }
 }
 

@@ -34,10 +34,12 @@ impl Engine {
     }
 
     pub fn render(&mut self) {
-        self.renderer
+        let renderer = self
+            .renderer
             .as_mut()
-            .expect("The renderer is uninitialized")
-            .render();
+            .expect("The renderer is uninitialized");
+        renderer.prepare_render(self.ecs.entity_store());
+        renderer.render();
     }
 
     pub fn resize(&mut self, new_size: WindowSize) {

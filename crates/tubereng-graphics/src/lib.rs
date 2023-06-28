@@ -1,11 +1,12 @@
 #![warn(clippy::pedantic)]
 
-use std::{collections::HashMap, f32::consts::PI};
+use std::collections::HashMap;
 
-use camera::{Camera, CameraUniform};
+use camera::{ActiveCamera, Camera, CameraUniform, OPENGL_TO_WGPU_MATRIX};
 use render_graph::{RenderGraph, RenderPass};
 use tubereng_core::Transform;
-use tubereng_math::{quaternion::Quaternion, vector::Vector3f};
+use tubereng_ecs::{entity::EntityStore, query::Q};
+
 use wgpu::util::DeviceExt;
 use winit::{dpi::PhysicalSize, window::Window};
 
@@ -22,6 +23,7 @@ pub struct WindowSize {
 }
 
 impl WindowSize {
+    #[must_use]
     pub fn new(width: u32, height: u32) -> Self {
         Self { width, height }
     }
@@ -39,7 +41,6 @@ pub struct Renderer {
     shader_modules: HashMap<String, wgpu::ShaderModule>,
     vertex_buffer: wgpu::Buffer,
     vertex_count: u32,
-    camera: Camera,
     camera_uniform: CameraUniform,
     camera_buffer: wgpu::Buffer,
     camera_bind_group_layout: wgpu::BindGroupLayout,
@@ -114,26 +115,41 @@ impl Renderer {
             contents: bytemuck::cast_slice(VERTICES),
             usage: wgpu::BufferUsages::VERTEX,
         });
+
+        #[allow(clippy::cast_possible_truncation)]
         let vertex_count = VERTICES.len() as u32;
 
-        let camera = Camera::new(
-            (0.0, 1.0, 2.0).into(),
-            (0.0, 0.0, 0.0).into(),
-            (0.0, 1.0, 0.0).into(),
-            800.0 / 600.0,
-            45.0,
-            0.1,
-            100.0,
-        );
-        let mut camera_uniform = CameraUniform::new();
-        camera_uniform.set_view_projection_matrix(camera.projection_matrix());
-
+        let camera_uniform = CameraUniform::new();
         let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("camera"),
             contents: bytemuck::cast_slice(&[camera_uniform]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
+        let (camera_bind_group_layout, camera_bind_group) =
+            Self::create_camera_bind_group(&device, &camera_buffer);
 
+        Self {
+            _window: window,
+            size,
+            surface,
+            device,
+            queue,
+            surface_configuration,
+            pipelines: HashMap::new(),
+            shader_modules,
+            vertex_buffer,
+            vertex_count,
+            camera_uniform,
+            camera_buffer,
+            camera_bind_group_layout,
+            camera_bind_group,
+        }
+    }
+
+    fn create_camera_bind_group(
+        device: &wgpu::Device,
+        camera_buffer: &wgpu::Buffer,
+    ) -> (wgpu::BindGroupLayout, wgpu::BindGroup) {
         let camera_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("camera_bind_group_layout"),
@@ -148,7 +164,6 @@ impl Renderer {
                     count: None,
                 }],
             });
-
         let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("camera_bind_group"),
             layout: &camera_bind_group_layout,
@@ -157,24 +172,26 @@ impl Renderer {
                 resource: camera_buffer.as_entire_binding(),
             }],
         });
+        (camera_bind_group_layout, camera_bind_group)
+    }
 
-        Self {
-            _window: window,
-            size,
-            surface,
-            device,
-            queue,
-            surface_configuration,
-            pipelines: HashMap::new(),
-            shader_modules,
-            vertex_buffer,
-            vertex_count,
-            camera,
-            camera_uniform,
-            camera_buffer,
-            camera_bind_group_layout,
-            camera_bind_group,
-        }
+    pub fn prepare_render(&mut self, entity_store: &EntityStore) {
+        // extract the active camera from the ecs
+        let camera_query = Q::<(&ActiveCamera, &Camera, &Transform)>::new(entity_store);
+        let (_, camera, camera_transform) = camera_query.iter().next().expect("Camera not found");
+        self.camera_uniform.set_view_projection_matrix(
+            OPENGL_TO_WGPU_MATRIX
+                * *camera.projection_matrix()
+                * camera_transform
+                    .as_matrix4()
+                    .try_inverse()
+                    .expect("No inverse for camera transform matrix"),
+        );
+        self.queue.write_buffer(
+            &self.camera_buffer,
+            0,
+            bytemuck::cast_slice(&[self.camera_uniform]),
+        );
     }
 
     pub fn render(&mut self) {
