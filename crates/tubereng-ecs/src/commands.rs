@@ -1,4 +1,4 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{any::Any, cell::RefCell, rc::Rc};
 
 use crate::{
     system::{Into, System, SystemSet},
@@ -28,6 +28,15 @@ impl CommandBuffer {
         self.commands
             .borrow_mut()
             .push(Box::new(InsertEntity::new(entity)));
+    }
+
+    pub fn insert_resource<R>(&self, resource: R)
+    where
+        R: 'static + Any,
+    {
+        self.commands
+            .borrow_mut()
+            .push(Box::new(InsertResource::new(resource)));
     }
 
     pub fn register_system_set(&self, system_set: SystemSet) {
@@ -95,6 +104,27 @@ where
 {
     fn apply(&mut self, ecs: &mut Ecs) {
         ecs.insert(self.entity.take().unwrap());
+    }
+}
+
+pub struct InsertResource<R> {
+    resource: Option<R>,
+}
+
+impl<R> InsertResource<R> {
+    pub fn new(resource: R) -> Self {
+        Self {
+            resource: Some(resource),
+        }
+    }
+}
+
+impl<R> Command for InsertResource<R>
+where
+    R: 'static + Any,
+{
+    fn apply(&mut self, ecs: &mut Ecs) {
+        ecs.insert_resource(self.resource.take().expect("Missing resource"));
     }
 }
 
