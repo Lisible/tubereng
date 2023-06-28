@@ -3,17 +3,19 @@
 use std::collections::HashMap;
 
 use camera::{ActiveCamera, Camera, CameraUniform, OPENGL_TO_WGPU_MATRIX};
+use geometry::Model;
 use render_graph::{RenderGraph, RenderPass};
 use tubereng_core::Transform;
 use tubereng_ecs::{entity::EntityStore, query::Q};
 
-use wgpu::util::DeviceExt;
+use wgpu::{util::DeviceExt, BindGroupLayoutDescriptor, BindGroupLayoutEntry};
 use winit::{dpi::PhysicalSize, window::Window};
 
 #[derive(Debug)]
 pub struct Cube;
 
 pub mod camera;
+pub mod geometry;
 pub mod render_graph;
 
 #[derive(Clone, Copy)]
@@ -39,8 +41,13 @@ pub struct Renderer {
 
     pipelines: HashMap<String, wgpu::RenderPipeline>,
     shader_modules: HashMap<String, wgpu::ShaderModule>,
-    vertex_buffer: wgpu::Buffer,
-    vertex_count: u32,
+    models: HashMap<String, Model>,
+    vertex_buffers: Vec<wgpu::Buffer>,
+    index_buffers: Vec<wgpu::Buffer>,
+    draw_commands: Vec<DrawCommand>,
+    mesh_uniform_buffer: wgpu::Buffer,
+    mesh_bind_group_layout: wgpu::BindGroupLayout,
+    mesh_bind_group: wgpu::BindGroup,
     camera_uniform: CameraUniform,
     camera_buffer: wgpu::Buffer,
     camera_bind_group_layout: wgpu::BindGroupLayout,
@@ -110,15 +117,6 @@ impl Renderer {
         let mut shader_modules = HashMap::new();
         shader_modules.insert("shader".into(), shader);
 
-        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: None,
-            contents: bytemuck::cast_slice(VERTICES),
-            usage: wgpu::BufferUsages::VERTEX,
-        });
-
-        #[allow(clippy::cast_possible_truncation)]
-        let vertex_count = VERTICES.len() as u32;
-
         let camera_uniform = CameraUniform::new();
         let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("camera"),
@@ -127,6 +125,51 @@ impl Renderer {
         });
         let (camera_bind_group_layout, camera_bind_group) =
             Self::create_camera_bind_group(&device, &camera_buffer);
+
+        let mesh_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("mesh_uniform_buffer"),
+            size: (std::mem::size_of::<MeshUniform>() * 100) as u64,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::UNIFORM,
+            mapped_at_creation: false,
+        });
+        let mesh_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            label: Some("mesh_bind_group_layout"),
+            entries: &[BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: true,
+                    min_binding_size: wgpu::BufferSize::new(
+                        std::mem::size_of::<MeshUniform>() as wgpu::BufferAddress
+                    ),
+                },
+                count: None,
+            }],
+        });
+
+        let mesh_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("mesh_bind_group"),
+            layout: &mesh_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                    buffer: &mesh_uniform_buffer,
+                    offset: 0,
+                    size: wgpu::BufferSize::new(
+                        std::mem::size_of::<MeshUniform>() as wgpu::BufferAddress
+                    ),
+                }),
+            }],
+        });
+
+        let mut vertex_buffers = vec![];
+        let mut index_buffers = vec![];
+        let mut models = HashMap::new();
+        models.insert(
+            "_cube".into(),
+            Model::new_cube(&device, &mut vertex_buffers, &mut index_buffers),
+        );
 
         Self {
             _window: window,
@@ -137,12 +180,17 @@ impl Renderer {
             surface_configuration,
             pipelines: HashMap::new(),
             shader_modules,
-            vertex_buffer,
-            vertex_count,
             camera_uniform,
             camera_buffer,
             camera_bind_group_layout,
             camera_bind_group,
+            models,
+            draw_commands: vec![],
+            vertex_buffers,
+            index_buffers,
+            mesh_uniform_buffer,
+            mesh_bind_group_layout,
+            mesh_bind_group,
         }
     }
 
@@ -176,7 +224,6 @@ impl Renderer {
     }
 
     pub fn prepare_render(&mut self, entity_store: &EntityStore) {
-        // extract the active camera from the ecs
         let camera_query = Q::<(&ActiveCamera, &Camera, &Transform)>::new(entity_store);
         let (_, camera, camera_transform) = camera_query.iter().next().expect("Camera not found");
         self.camera_uniform.set_view_projection_matrix(
@@ -192,6 +239,29 @@ impl Renderer {
             0,
             bytemuck::cast_slice(&[self.camera_uniform]),
         );
+
+        let cube_model = &self.models["_cube"];
+        for (i, (_, transform)) in Q::<(&Cube, &Transform)>::new(entity_store)
+            .iter()
+            .enumerate()
+        {
+            for mesh in &cube_model.meshes {
+                self.draw_commands.push(DrawCommand {
+                    vertex_buffer: mesh.vertex_buffer,
+                    index_buffer: mesh.index_buffer,
+                    element_count: mesh.element_count,
+                });
+
+                self.queue.write_buffer(
+                    &self.mesh_uniform_buffer,
+                    (i * std::mem::size_of::<MeshUniform>()) as u64,
+                    bytemuck::cast_slice(&[MeshUniform {
+                        world_transform: transform.as_matrix4().into(),
+                        _padding: [0; 24],
+                    }]),
+                );
+            }
+        }
     }
 
     pub fn render(&mut self) {
@@ -212,19 +282,11 @@ impl Renderer {
 
         let mut render_graph = RenderGraph::new();
         let render_target = render_graph.register_render_target(view);
-        let vertex_count = self.vertex_count;
         RenderPass::new("render_pass", &mut render_graph)
             .with_shader("shader")
             .with_render_target(render_target)
-            .dispatch(move |rpass| {
-                rpass.draw(0..vertex_count, 0..1);
-            });
-
-        RenderPass::new("render_pass2", &mut render_graph)
-            .with_shader("shader")
-            .with_render_target(render_target)
-            .dispatch(move |rpass| {
-                rpass.draw(0..vertex_count, 0..1);
+            .dispatch(move |rpass, draw_command| {
+                rpass.draw_indexed(0..draw_command.element_count as u32, 0, 0..1);
             });
 
         render_graph.execute(
@@ -233,13 +295,18 @@ impl Renderer {
             &self.surface_configuration,
             &self.shader_modules,
             &mut self.pipelines,
-            &self.vertex_buffer,
             &self.camera_bind_group_layout,
             &self.camera_bind_group,
+            &self.mesh_bind_group_layout,
+            &self.mesh_bind_group,
+            &self.vertex_buffers,
+            &self.index_buffers,
+            &self.draw_commands,
         );
 
         self.queue.submit(std::iter::once(encoder.finish()));
         output.present();
+        self.draw_commands.clear();
     }
 
     pub fn resize(&mut self, new_size: WindowSize) {
@@ -255,37 +322,15 @@ impl Renderer {
     }
 }
 
+pub struct DrawCommand {
+    vertex_buffer: usize,
+    index_buffer: usize,
+    element_count: usize,
+}
+
 #[repr(C)]
-#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-struct Vertex {
-    position: [f32; 3],
-    color: [f32; 3],
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct MeshUniform {
+    world_transform: [[f32; 4]; 4],
+    _padding: [u64; 24],
 }
-
-impl Vertex {
-    const ATTRIBUTES: [wgpu::VertexAttribute; 2] =
-        wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3];
-
-    fn buffer_layout() -> wgpu::VertexBufferLayout<'static> {
-        wgpu::VertexBufferLayout {
-            array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &Self::ATTRIBUTES,
-        }
-    }
-}
-
-const VERTICES: &[Vertex] = &[
-    Vertex {
-        position: [0.0, 0.5, 0.0],
-        color: [1.0, 0.0, 0.0],
-    },
-    Vertex {
-        position: [-0.5, -0.5, 0.0],
-        color: [0.0, 1.0, 0.0],
-    },
-    Vertex {
-        position: [0.5, -0.5, 0.0],
-        color: [0.0, 0.0, 1.0],
-    },
-];
