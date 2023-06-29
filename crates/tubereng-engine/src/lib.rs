@@ -1,6 +1,7 @@
 #![warn(clippy::pedantic)]
 
 use log::info;
+use tubereng_assets::AssetStore;
 use tubereng_ecs::{
     system::{Into, System, SystemFn},
     Ecs,
@@ -10,6 +11,7 @@ use tubereng_graphics::{Renderer, WindowSize};
 pub struct Engine {
     application_title: &'static str,
     ecs: Ecs,
+    asset_store: AssetStore,
     renderer: Option<Renderer>,
 }
 
@@ -17,6 +19,10 @@ impl Engine {
     #[must_use]
     pub fn application_title(&self) -> &'static str {
         self.application_title
+    }
+
+    pub fn asset_store(&self) -> &AssetStore {
+        &self.asset_store
     }
 
     pub fn initialize_renderer(&mut self, renderer: Renderer) {
@@ -89,6 +95,7 @@ impl EngineBuilder {
             application_title: self.application_title.unwrap_or("TuberApp"),
             ecs,
             renderer: None,
+            asset_store: AssetStore::new(),
         }
     }
 }

@@ -17,5 +17,6 @@ tubereng-engine = { path = "crates/tubereng-engine" }
 tubereng-math = { path = "crates/tubereng-math" }
 tubereng-core = { path = "crates/tubereng-core" }
 tubereng-ecs = { path = "crates/tubereng-ecs" }
+tubereng-assets = { path = "crates/tubereng-assets" }
 tubereng-winit = { path = "crates/tubereng-winit" }
 tubereng-graphics = { path = "crates/tubereng-graphics" }
