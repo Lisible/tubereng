@@ -102,6 +102,7 @@ pub trait Argument<'a>: Sized {
     type Type: 'a;
     fn fetch(entity_store: &'a EntityStore, index: usize) -> Option<Self::Type>;
 }
+
 impl<'a, T: 'static> Argument<'a> for &T {
     type Type = Ref<'a, T>;
     fn fetch(entity_store: &'a EntityStore, index: usize) -> Option<Self::Type> {
@@ -113,6 +114,27 @@ impl<'a, T: 'static> Argument<'a> for &mut T {
     type Type = RefMut<'a, T>;
     fn fetch(entity_store: &'a EntityStore, index: usize) -> Option<Self::Type> {
         entity_store.query_component_mut(index)
+    }
+}
+
+impl<'a, T: 'static> Argument<'a> for Option<&T> {
+    type Type = Option<Ref<'a, T>>;
+
+    fn fetch(entity_store: &'a EntityStore, index: usize) -> Option<Self::Type> {
+        match entity_store.query_component(index) {
+            Some(component) => Some(Some(component)),
+            None => Some(None),
+        }
+    }
+}
+
+impl<'a, T: 'static> Argument<'a> for Option<&mut T> {
+    type Type = Option<RefMut<'a, T>>;
+    fn fetch(entity_store: &'a EntityStore, index: usize) -> Option<Self::Type> {
+        match entity_store.query_component_mut(index) {
+            Some(component) => Some(Some(component)),
+            None => Some(None),
+        }
     }
 }
 
@@ -140,6 +162,26 @@ mod tests {
         for (_player, health) in query.iter() {
             assert!(health.0 >= 8);
         }
+    }
+
+    #[test]
+    fn query_optional() {
+        let mut ecs = Ecs::new();
+        ecs.insert((Player, Health(10)));
+        ecs.insert((Health(8),));
+
+        let query = Q::<(Option<&Player>, &Health)>::new(&ecs.entity_store);
+        assert_eq!(query.iter().count(), 2);
+    }
+
+    #[test]
+    fn query_optional_mut() {
+        let mut ecs = Ecs::new();
+        ecs.insert((Player, Health(10)));
+        ecs.insert((Health(8),));
+
+        let query = Q::<(Option<&mut Player>, &Health)>::new(&ecs.entity_store);
+        assert_eq!(query.iter().count(), 2);
     }
 
     #[test]
