@@ -1,7 +1,7 @@
 #![warn(clippy::pedantic)]
 
 use log::info;
-use tubereng_assets::AssetStore;
+use tubereng_assets::{AssetStore, FS};
 use tubereng_ecs::{
     system::{Into, System, SystemFn},
     Ecs,
@@ -11,7 +11,6 @@ use tubereng_graphics::{Renderer, WindowSize};
 pub struct Engine {
     application_title: &'static str,
     ecs: Ecs,
-    asset_store: AssetStore,
     renderer: Option<Renderer>,
 }
 
@@ -19,10 +18,6 @@ impl Engine {
     #[must_use]
     pub fn application_title(&self) -> &'static str {
         self.application_title
-    }
-
-    pub fn asset_store(&self) -> &AssetStore {
-        &self.asset_store
     }
 
     pub fn initialize_renderer(&mut self, renderer: Renderer) {
@@ -44,7 +39,13 @@ impl Engine {
             .renderer
             .as_mut()
             .expect("The renderer is uninitialized");
-        renderer.prepare_render(self.ecs.entity_store());
+        renderer.prepare_render(
+            self.ecs.entity_store(),
+            &self
+                .ecs
+                .resource::<AssetStore>()
+                .expect("AssetStore is not present in the resources"),
+        );
         renderer.render();
     }
 
@@ -90,12 +91,12 @@ impl EngineBuilder {
     pub fn build(self) -> Engine {
         let mut ecs = Ecs::new();
         ecs.register_setup_system(self.setup_system.unwrap_or(Box::new(Into::into(|| {}))));
+        ecs.insert_resource(AssetStore::<FS>::new());
 
         Engine {
             application_title: self.application_title.unwrap_or("TuberApp"),
             ecs,
             renderer: None,
-            asset_store: AssetStore::new(),
         }
     }
 }

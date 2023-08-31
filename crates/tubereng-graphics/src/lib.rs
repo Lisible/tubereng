@@ -2,6 +2,8 @@
 #![allow(clippy::module_name_repetitions)]
 
 use std::{collections::HashMap, future::Future};
+use texture::{Texture, TextureCache};
+use tubereng_assets::{AssetHandle, AssetStore};
 
 use camera::{ActiveCamera, Camera, CameraUniform, OPENGL_TO_WGPU_MATRIX};
 use geometry::Model;
@@ -13,11 +15,14 @@ use wgpu::{util::DeviceExt, BindGroupLayoutDescriptor, BindGroupLayoutEntry};
 use winit::{dpi::PhysicalSize, window::Window};
 
 #[derive(Debug)]
-pub struct Cube;
+pub struct Cube {
+    pub texture: AssetHandle<Texture>,
+}
 
 pub mod camera;
 pub mod geometry;
 pub mod render_graph;
+pub mod texture;
 
 #[derive(Clone, Copy)]
 pub struct WindowSize {
@@ -46,6 +51,7 @@ pub struct Renderer {
     vertex_buffers: Vec<wgpu::Buffer>,
     index_buffers: Vec<wgpu::Buffer>,
     draw_commands: Vec<DrawCommand>,
+    texture_cache: TextureCache,
     mesh_uniform_buffer: wgpu::Buffer,
     mesh_bind_group_layout: wgpu::BindGroupLayout,
     mesh_bind_group: wgpu::BindGroup,
@@ -140,6 +146,7 @@ impl Renderer {
             mesh_uniform_buffer,
             mesh_bind_group_layout,
             mesh_bind_group,
+            texture_cache: TextureCache::new(),
         }
     }
 
@@ -250,7 +257,7 @@ impl Renderer {
         (camera_bind_group_layout, camera_bind_group)
     }
 
-    pub fn prepare_render(&mut self, entity_store: &EntityStore) {
+    pub fn prepare_render(&mut self, entity_store: &EntityStore, asset_store: &AssetStore) {
         let camera_query = Q::<(&ActiveCamera, &Camera, &Transform)>::new(entity_store);
         let (_, camera, camera_transform) = camera_query.iter().next().expect("Camera not found");
         self.camera_uniform.set_view_projection_matrix(
@@ -268,10 +275,23 @@ impl Renderer {
         );
 
         let cube_model = &self.models["_cube"];
-        for (i, (_, transform)) in Q::<(&Cube, &Transform)>::new(entity_store)
+        for (i, (cube, transform)) in Q::<(&Cube, &Transform)>::new(entity_store)
             .iter()
             .enumerate()
         {
+            let cube_texture_handle = cube.texture;
+            let texture = if self.texture_cache.has(cube_texture_handle) {
+                self.texture_cache.get(cube_texture_handle)
+            } else {
+                let texture = asset_store.get(cube_texture_handle).unwrap();
+                self.texture_cache.load_to_vram(
+                    cube_texture_handle,
+                    texture,
+                    &self.device,
+                    &self.queue,
+                )
+            };
+
             for mesh in &cube_model.meshes {
                 self.draw_commands.push(DrawCommand {
                     vertex_buffer: mesh.vertex_buffer,

@@ -3,7 +3,9 @@
 use std::{
     any::{Any, TypeId},
     collections::HashMap,
+    hash::Hasher,
     marker::PhantomData,
+    path::PathBuf,
 };
 
 pub type Result<T> = std::result::Result<T, AssetError>;
@@ -11,12 +13,36 @@ pub type Result<T> = std::result::Result<T, AssetError>;
 #[derive(Debug)]
 pub enum AssetError {
     PathCanonicalizationFailed,
+    ImageDecodingFailed,
+    ReadFailed,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 pub struct AssetHandle<T> {
     id: usize,
     _marker: PhantomData<T>,
+}
+
+impl<T> Clone for AssetHandle<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<T> Copy for AssetHandle<T> {}
+
+impl<T> PartialEq for AssetHandle<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+
+impl<T> Eq for AssetHandle<T> {}
+
+impl<T> std::hash::Hash for AssetHandle<T> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.id.hash(state)
+    }
 }
 
 impl<T: 'static> AssetHandle<T> {
@@ -55,7 +81,18 @@ where
     where
         A: 'static + Asset,
     {
-        let bytes = FS::read_bytes(asset_path);
+        let mut resolved_asset_path = if let Ok(manifest_path) = std::env::var("CARGO_MANIFEST_DIR")
+        {
+            PathBuf::from(manifest_path)
+        } else {
+            let mut path = std::env::current_exe().unwrap();
+            path.pop();
+            path
+        };
+
+        resolved_asset_path.push("assets/");
+        resolved_asset_path.push(asset_path);
+        let bytes = FS::read_bytes(resolved_asset_path.to_str().unwrap())?;
         let asset = A::Loader::load(&bytes)?;
         let assets = self
             .assets
@@ -85,7 +122,7 @@ where
 }
 
 pub trait FileSystem {
-    fn read_bytes(path: &str) -> Vec<u8>;
+    fn read_bytes(path: &str) -> Result<Vec<u8>>;
 }
 
 pub trait Asset: Sized {
@@ -103,8 +140,8 @@ pub trait AssetLoader<T> {
 
 pub struct FS;
 impl FileSystem for FS {
-    fn read_bytes(path: &str) -> Vec<u8> {
-        std::fs::read(path).unwrap()
+    fn read_bytes(path: &str) -> Result<Vec<u8>> {
+        Ok(std::fs::read(path).map_err(|_| AssetError::ReadFailed)?)
     }
 }
 
@@ -126,8 +163,8 @@ mod tests {
 
     pub struct MockFS;
     impl FileSystem for MockFS {
-        fn read_bytes(_path: &str) -> Vec<u8> {
-            vec![]
+        fn read_bytes(_path: &str) -> std::result::Result<Vec<u8>, AssetError> {
+            Ok(vec![])
         }
     }
 

@@ -4,8 +4,9 @@
 use std::f32::consts::PI;
 
 use tubereng::{
+    assets::AssetStore,
     core::Transform,
-    ecs::{commands::CommandBuffer, query::Q},
+    ecs::{commands::CommandBuffer, query::Q, system::ResMut},
     engine::EngineBuilder,
     graphics::{
         camera::{ActiveCamera, Camera},
@@ -24,7 +25,7 @@ fn main() {
     pollster::block_on(WinitTuberRunner::run(engine));
 }
 
-fn setup(command_buffer: &CommandBuffer) {
+fn setup(command_buffer: &CommandBuffer, asset_store: ResMut<AssetStore>) {
     command_buffer.insert((
         ActiveCamera,
         Camera::new_perspective(45.0, 800.0 / 600.0, 0.1, 100.0),
@@ -33,8 +34,12 @@ fn setup(command_buffer: &CommandBuffer) {
             ..Default::default()
         },
     ));
+
+    let ResMut(mut asset_store) = asset_store;
+    let texture = asset_store.load("texture.png").unwrap();
+
     command_buffer.insert((
-        Cube,
+        Cube { texture },
         Transform {
             translation: Vector3f::new(-1.0, 0.0, 0.0),
             scale: Vector3f::new(0.5, 0.5, 0.5),
@@ -43,7 +48,7 @@ fn setup(command_buffer: &CommandBuffer) {
     ));
 
     command_buffer.insert((
-        Cube,
+        Cube { texture },
         Transform {
             translation: Vector3f::new(1.0, 0.0, 0.0),
             scale: Vector3f::new(0.5, 0.5, 0.5),
