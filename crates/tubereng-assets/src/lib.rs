@@ -13,32 +13,24 @@ pub enum AssetError {
     PathCanonicalizationFailed,
 }
 
-pub struct AssetHandle<'a, T> {
-    inner: TypeErasedAssetHandle<'a>,
+#[derive(Debug, Clone, Copy)]
+pub struct AssetHandle<T> {
+    id: usize,
     _marker: PhantomData<T>,
 }
 
-impl<'a, T: 'static> AssetHandle<'a, T> {
+impl<T: 'static> AssetHandle<T> {
     #[must_use]
-    fn new(inner: TypeErasedAssetHandle<'a>) -> Self {
+    fn new(id: usize) -> Self {
         Self {
-            inner,
+            id,
             _marker: PhantomData,
         }
     }
-
-    #[must_use]
-    pub fn get(&self) -> &'a T {
-        // SAFETY: We know that inner contains a reference to a T
-        // Because we knew its type when we created the handle
-        unsafe { self.inner.0.downcast_ref().unwrap_unchecked() }
-    }
 }
 
-pub struct TypeErasedAssetHandle<'a>(&'a dyn Any);
-
 pub struct AssetStore<FileSys = FS> {
-    assets: HashMap<TypeId, HashMap<String, Box<dyn Any>>>,
+    assets: HashMap<TypeId, Vec<Box<dyn Any>>>,
     _marker: PhantomData<FileSys>,
 }
 impl<FS> AssetStore<FS>
@@ -68,13 +60,18 @@ where
         let assets = self
             .assets
             .entry(TypeId::of::<A>())
-            .or_insert_with(HashMap::new);
+            .or_insert_with(Vec::new);
+        let asset_id = assets.len();
+        assets.push(Box::new(asset));
+        Ok(AssetHandle::new(asset_id))
+    }
 
-        assets.insert(asset_path.to_string(), Box::new(asset));
-        Ok(AssetHandle::new(TypeErasedAssetHandle(
-            // SAFETY: This is safe as we just added it into the assets
-            unsafe { assets.get(asset_path).unwrap_unchecked() }.as_ref(),
-        )))
+    pub fn get<T: 'static>(&self, handle: AssetHandle<T>) -> Option<&T> {
+        Some(
+            self.assets[&TypeId::of::<T>()]
+                .get(handle.id)?
+                .downcast_ref()?,
+        )
     }
 }
 
@@ -138,8 +135,16 @@ mod tests {
     fn asset_store_new() -> Result<()> {
         let mut asset_store = AssetStore::<MockFS>::new();
         let asset_handle = asset_store.load::<Text>("test.txt")?;
-        let text = asset_handle.get();
-        assert_eq!(text.0, String::from("cheh"));
+        assert_eq!(asset_handle.id, 0);
+        Ok(())
+    }
+
+    #[test]
+    fn asset_store_get() -> Result<()> {
+        let mut asset_store = AssetStore::<MockFS>::new();
+        let asset_handle = asset_store.load::<Text>("test.txt")?;
+        let asset = asset_store.get(asset_handle).unwrap();
+        assert_eq!(&asset.0, "cheh");
         Ok(())
     }
 }
