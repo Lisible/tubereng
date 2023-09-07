@@ -15,6 +15,7 @@ pub enum AssetError {
     PathCanonicalizationFailed,
     ImageDecodingFailed,
     ReadFailed,
+    RonAssetParsingFailed(ron::error::SpannedError),
 }
 
 #[derive(Debug)]
@@ -138,6 +139,24 @@ pub trait AssetLoader<T> {
     fn load(file_content: &[u8]) -> Result<T>;
 }
 
+pub trait RonAsset {}
+impl<T> Asset for T
+where
+    T: RonAsset + for<'a> serde::Deserialize<'a> + serde::Serialize,
+{
+    type Loader = RonAssetLoader;
+}
+
+pub struct RonAssetLoader;
+impl<T> AssetLoader<T> for RonAssetLoader
+where
+    T: RonAsset + for<'a> serde::Deserialize<'a> + serde::Serialize,
+{
+    fn load(file_content: &[u8]) -> Result<T> {
+        ron::de::from_bytes(file_content).map_err(|e| AssetError::RonAssetParsingFailed(e))
+    }
+}
+
 pub struct FS;
 impl FileSystem for FS {
     fn read_bytes(path: &str) -> Result<Vec<u8>> {
@@ -161,10 +180,25 @@ mod tests {
         }
     }
 
+    #[derive(Debug, serde::Deserialize, serde::Serialize)]
+    pub struct Material {
+        texture: String,
+    }
+
+    impl RonAsset for Material {}
+
     pub struct MockFS;
     impl FileSystem for MockFS {
-        fn read_bytes(_path: &str) -> std::result::Result<Vec<u8>, AssetError> {
-            Ok(vec![])
+        fn read_bytes(path: &str) -> std::result::Result<Vec<u8>, AssetError> {
+            if path.contains("material.ron") {
+                let asset_str = "Material(
+                        texture: \"texture.png\",
+                      )
+                    ";
+                Ok(asset_str.as_bytes().to_vec())
+            } else {
+                Ok(vec![])
+            }
         }
     }
 
@@ -182,6 +216,15 @@ mod tests {
         let asset_handle = asset_store.load::<Text>("test.txt")?;
         let asset = asset_store.get(asset_handle).unwrap();
         assert_eq!(&asset.0, "cheh");
+        Ok(())
+    }
+
+    #[test]
+    fn asset_store_load_ron() -> Result<()> {
+        let mut asset_store = AssetStore::<MockFS>::new();
+        let asset_handle = asset_store.load::<Material>("material.ron")?;
+        let asset = asset_store.get(asset_handle).unwrap();
+        assert_eq!(&asset.texture, "texture.png");
         Ok(())
     }
 }
