@@ -24,6 +24,12 @@ pub struct AssetHandle<T> {
     _marker: PhantomData<T>,
 }
 
+impl<T> AssetHandle<T> {
+    pub fn id(&self) -> usize {
+        self.id
+    }
+}
+
 impl<T> Clone for AssetHandle<T> {
     fn clone(&self) -> Self {
         *self

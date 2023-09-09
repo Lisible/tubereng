@@ -1,7 +1,7 @@
 use log::debug;
 use std::collections::HashMap;
 
-use crate::{geometry::Vertex, DrawCommand, RenderingContext};
+use crate::{geometry::Vertex, material::MaterialCache, DrawCommand, RenderingContext};
 
 #[derive(Clone, Copy, Debug)]
 pub struct RenderTargetId(usize);
@@ -55,6 +55,7 @@ impl RenderGraph {
                     ctx.shader_modules,
                     ctx.camera_bind_group_layout,
                     ctx.mesh_bind_group_layout,
+                    ctx.material_bind_group_layout,
                 );
                 ctx.pipelines
                     .insert(render_pass.identifier.into(), pipeline);
@@ -74,7 +75,7 @@ impl RenderGraph {
                     ctx.index_buffers[draw_command.index_buffer].slice(..),
                     wgpu::IndexFormat::Uint16,
                 );
-                (render_pass.dispatch_fn)(&mut wgpu_render_pass, draw_command);
+                (render_pass.dispatch_fn)(&mut wgpu_render_pass, draw_command, ctx.material_cache);
             }
         }
     }
@@ -86,11 +87,16 @@ impl RenderGraph {
         shader_modules: &HashMap<String, wgpu::ShaderModule>,
         camera_bind_group_layout: &wgpu::BindGroupLayout,
         mesh_bind_group_layout: &wgpu::BindGroupLayout,
+        material_bind_group_layout: &wgpu::BindGroupLayout,
     ) -> wgpu::RenderPipeline {
         let shader_module = &shader_modules[render_pass.shader_identifier];
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some(&format!("{}_pipeline_layout", render_pass.identifier)),
-            bind_group_layouts: &[camera_bind_group_layout, mesh_bind_group_layout],
+            bind_group_layouts: &[
+                camera_bind_group_layout,
+                mesh_bind_group_layout,
+                material_bind_group_layout,
+            ],
             push_constant_ranges: &[],
         });
 
@@ -137,7 +143,8 @@ impl Default for RenderGraph {
     }
 }
 
-type BoxedRenderPassDispatchFn = Box<dyn Fn(&mut wgpu::RenderPass, &DrawCommand)>;
+type BoxedRenderPassDispatchFn =
+    Box<dyn for<'l> Fn(&mut wgpu::RenderPass<'l>, &DrawCommand, &'l MaterialCache)>;
 pub struct RenderPass {
     identifier: &'static str,
     shader_identifier: &'static str,
@@ -186,7 +193,7 @@ impl<'a> RenderPassBuilder<'a> {
 
     pub fn dispatch<F>(self, dispatch_fn: F)
     where
-        F: 'static + Fn(&mut wgpu::RenderPass, &DrawCommand),
+        F: 'static + for<'l> Fn(&mut wgpu::RenderPass<'l>, &DrawCommand, &'l MaterialCache),
     {
         self.render_graph.render_passes.push(RenderPass {
             identifier: self.identifier,

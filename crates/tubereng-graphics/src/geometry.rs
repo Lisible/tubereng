@@ -14,36 +14,36 @@ impl Model {
             label: None,
             contents: bytemuck::cast_slice(&[
                 Vertex {
-                    position: [1f32, 1f32, -1f32],
-                    color: [1f32, 0f32, 0f32],
+                    position: [0.5f32, -0.5f32, -0.5f32],
+                    texture_coordinates: [0.0, 0.0],
                 },
                 Vertex {
-                    position: [1f32, -1f32, -1f32],
-                    color: [0f32, 1f32, 0f32],
+                    position: [0.5f32, -0.5f32, 0.5f32],
+                    texture_coordinates: [0.0, 1.0],
                 },
                 Vertex {
-                    position: [1f32, 1f32, 1f32],
-                    color: [0f32, 0f32, 1f32],
+                    position: [-0.5f32, -0.5f32, 0.5f32],
+                    texture_coordinates: [1.0, 1.0],
                 },
                 Vertex {
-                    position: [1f32, -1f32, 1f32],
-                    color: [1f32, 0f32, 1f32],
+                    position: [-0.5f32, -0.5f32, -0.5f32],
+                    texture_coordinates: [1.0, 1.0],
                 },
                 Vertex {
-                    position: [-1f32, 1f32, -1f32],
-                    color: [0f32, 1f32, 1f32],
+                    position: [0.5f32, 0.5f32, -0.5f32],
+                    texture_coordinates: [1.0, 0.0],
                 },
                 Vertex {
-                    position: [-1f32, -1f32, -1f32],
-                    color: [1f32, 1f32, 0f32],
+                    position: [0.5f32, 0.5f32, 0.5f32],
+                    texture_coordinates: [0.0, 0.0],
                 },
                 Vertex {
-                    position: [-1f32, 1f32, 1f32],
-                    color: [1f32, 1f32, 1f32],
+                    position: [-0.5f32, 0.5f32, 0.5f32],
+                    texture_coordinates: [1.0, 0.0],
                 },
                 Vertex {
-                    position: [-1f32, -1f32, 1f32],
-                    color: [0f32, 0f32, 0f32],
+                    position: [-0.5f32, 0.5f32, -0.5f32],
+                    texture_coordinates: [0.0, 1.0],
                 },
             ]),
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::VERTEX,
@@ -81,12 +81,12 @@ pub struct Mesh {
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Vertex {
     position: [f32; 3],
-    color: [f32; 3],
+    texture_coordinates: [f32; 2],
 }
 
 impl Vertex {
     const ATTRIBUTES: [wgpu::VertexAttribute; 2] =
-        wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3];
+        wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x2];
 
     #[must_use]
     pub fn buffer_layout() -> wgpu::VertexBufferLayout<'static> {

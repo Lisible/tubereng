@@ -36,21 +36,12 @@ fn setup(command_buffer: &CommandBuffer, asset_store: ResMut<AssetStore>) {
     ));
 
     let ResMut(mut asset_store) = asset_store;
-    let texture = asset_store.load("texture.png").unwrap();
+    let material = asset_store.load("material.ron").unwrap();
 
     command_buffer.insert((
-        Cube { texture },
+        Cube { material },
         Transform {
-            translation: Vector3f::new(-1.0, 0.0, 0.0),
-            scale: Vector3f::new(0.5, 0.5, 0.5),
-            rotation: Quaternion::from_axis_angle(&Vector3f::new(0.0, 1.0, 0.0), PI / 6.0),
-        },
-    ));
-
-    command_buffer.insert((
-        Cube { texture },
-        Transform {
-            translation: Vector3f::new(1.0, 0.0, 0.0),
+            translation: Vector3f::new(0.0, 0.0, 0.0),
             scale: Vector3f::new(0.5, 0.5, 0.5),
             rotation: Quaternion::from_axis_angle(&Vector3f::new(0.0, 1.0, 0.0), PI / 6.0),
         },

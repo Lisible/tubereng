@@ -41,9 +41,9 @@ impl Engine {
             .expect("The renderer is uninitialized");
         renderer.prepare_render(
             self.ecs.entity_store(),
-            &self
+            &mut self
                 .ecs
-                .resource::<AssetStore>()
+                .resource_mut::<AssetStore>()
                 .expect("AssetStore is not present in the resources"),
         );
         renderer.render();

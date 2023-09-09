@@ -1,8 +1,9 @@
 #![warn(clippy::pedantic)]
 #![allow(clippy::module_name_repetitions)]
 
+use material::{MaterialAsset, MaterialCache};
 use std::{collections::HashMap, future::Future};
-use texture::{Texture, TextureCache};
+use texture::TextureCache;
 use tubereng_assets::{AssetHandle, AssetStore};
 
 use camera::{ActiveCamera, Camera, CameraUniform, OPENGL_TO_WGPU_MATRIX};
@@ -16,11 +17,12 @@ use winit::{dpi::PhysicalSize, window::Window};
 
 #[derive(Debug)]
 pub struct Cube {
-    pub texture: AssetHandle<Texture>,
+    pub material: AssetHandle<MaterialAsset>,
 }
 
 pub mod camera;
 pub mod geometry;
+pub mod material;
 pub mod render_graph;
 pub mod texture;
 
@@ -52,6 +54,8 @@ pub struct Renderer {
     index_buffers: Vec<wgpu::Buffer>,
     draw_commands: Vec<DrawCommand>,
     texture_cache: TextureCache,
+    material_cache: MaterialCache,
+    material_bind_group_layout: wgpu::BindGroupLayout,
     mesh_uniform_buffer: wgpu::Buffer,
     mesh_bind_group_layout: wgpu::BindGroupLayout,
     mesh_bind_group: wgpu::BindGroup,
@@ -118,6 +122,7 @@ impl Renderer {
         });
         let (mesh_bind_group_layout, mesh_bind_group) =
             Self::create_mesh_bind_group(&device, &mesh_uniform_buffer);
+        let material_bind_group_layout = Self::create_material_bind_group_layout(&device);
         let mut vertex_buffers = vec![];
         let mut index_buffers = vec![];
         let mut models = HashMap::new();
@@ -125,6 +130,8 @@ impl Renderer {
             "_cube".into(),
             Model::new_cube(&device, &mut vertex_buffers, &mut index_buffers),
         );
+
+        let material_cache = MaterialCache::new(&device);
 
         Self {
             _window: window,
@@ -147,6 +154,8 @@ impl Renderer {
             mesh_bind_group_layout,
             mesh_bind_group,
             texture_cache: TextureCache::new(),
+            material_cache,
+            material_bind_group_layout,
         }
     }
 
@@ -257,7 +266,7 @@ impl Renderer {
         (camera_bind_group_layout, camera_bind_group)
     }
 
-    pub fn prepare_render(&mut self, entity_store: &EntityStore, asset_store: &AssetStore) {
+    pub fn prepare_render(&mut self, entity_store: &EntityStore, asset_store: &mut AssetStore) {
         let camera_query = Q::<(&ActiveCamera, &Camera, &Transform)>::new(entity_store);
         let (_, camera, camera_transform) = camera_query.iter().next().expect("Camera not found");
         self.camera_uniform.set_view_projection_matrix(
@@ -279,24 +288,24 @@ impl Renderer {
             .iter()
             .enumerate()
         {
-            let cube_texture_handle = cube.texture;
-            let texture = if self.texture_cache.has(cube_texture_handle) {
-                self.texture_cache.get(cube_texture_handle)
-            } else {
-                let texture = asset_store.get(cube_texture_handle).unwrap();
-                self.texture_cache.load_to_vram(
-                    cube_texture_handle,
-                    texture,
+            let cube_material_handle = cube.material;
+            if !self.material_cache.has(cube_material_handle) {
+                self.material_cache.load(
+                    cube_material_handle,
+                    asset_store,
+                    &mut self.texture_cache,
+                    &self.material_bind_group_layout,
                     &self.device,
                     &self.queue,
-                )
-            };
+                );
+            }
 
             for mesh in &cube_model.meshes {
                 self.draw_commands.push(DrawCommand {
                     vertex_buffer: mesh.vertex_buffer,
                     index_buffer: mesh.index_buffer,
                     element_count: mesh.element_count,
+                    material_handle: cube_material_handle,
                 });
 
                 self.queue.write_buffer(
@@ -332,7 +341,9 @@ impl Renderer {
         RenderPass::new("render_pass", &mut render_graph)
             .with_shader("shader")
             .with_render_target(render_target)
-            .dispatch(move |rpass, draw_command| {
+            .dispatch(move |rpass, draw_command, material_cache| {
+                let material = material_cache.get(draw_command.material_handle);
+                material.bind(2, rpass);
                 rpass.draw_indexed(0..draw_command.element_count, 0, 0..1);
             });
 
@@ -354,12 +365,37 @@ impl Renderer {
         self.surface
             .configure(&self.device, &self.surface_configuration);
     }
+
+    fn create_material_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("material_bind_group_layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+        })
+    }
 }
 
 pub struct DrawCommand {
     vertex_buffer: usize,
     index_buffer: usize,
     element_count: u32,
+    material_handle: AssetHandle<MaterialAsset>,
 }
 
 #[repr(C)]
@@ -377,11 +413,13 @@ pub struct RenderingContext<'a> {
     vertex_buffers: &'a Vec<wgpu::Buffer>,
     index_buffers: &'a Vec<wgpu::Buffer>,
     surface_configuration: &'a wgpu::SurfaceConfiguration,
+    material_cache: &'a MaterialCache,
     shader_modules: &'a HashMap<String, wgpu::ShaderModule>,
     camera_bind_group_layout: &'a wgpu::BindGroupLayout,
     camera_bind_group: &'a wgpu::BindGroup,
     mesh_bind_group_layout: &'a wgpu::BindGroupLayout,
     mesh_bind_group: &'a wgpu::BindGroup,
+    material_bind_group_layout: &'a wgpu::BindGroupLayout,
 }
 
 impl<'a> RenderingContext<'a> {
@@ -399,6 +437,8 @@ impl<'a> RenderingContext<'a> {
             camera_bind_group: &renderer.camera_bind_group,
             mesh_bind_group_layout: &renderer.mesh_bind_group_layout,
             mesh_bind_group: &renderer.mesh_bind_group,
+            material_bind_group_layout: &renderer.material_bind_group_layout,
+            material_cache: &renderer.material_cache,
         }
     }
 }

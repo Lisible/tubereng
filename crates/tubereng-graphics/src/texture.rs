@@ -4,17 +4,17 @@ use image;
 use tubereng_assets::{Asset, AssetError, AssetHandle, AssetLoader};
 
 #[derive(Debug)]
-pub struct Texture {
-    image: image::DynamicImage,
+pub struct TextureAsset {
+    pub(crate) image: image::DynamicImage,
 }
 
-impl Asset for Texture {
+impl Asset for TextureAsset {
     type Loader = TextureLoader;
 }
 
 pub struct TextureLoader;
-impl AssetLoader<Texture> for TextureLoader {
-    fn load(file_content: &[u8]) -> tubereng_assets::Result<Texture> {
+impl AssetLoader<TextureAsset> for TextureLoader {
+    fn load(file_content: &[u8]) -> tubereng_assets::Result<TextureAsset> {
         // FIXME: Fix the error handling
         let image = image::io::Reader::new(Cursor::new(file_content))
             .with_guessed_format()
@@ -24,33 +24,35 @@ impl AssetLoader<Texture> for TextureLoader {
                 dbg!(e);
                 AssetError::ImageDecodingFailed
             })?;
-        Ok(Texture { image })
+        Ok(TextureAsset { image })
     }
 }
 
+const MAX_TEXTURE_COUNT: usize = 4096;
+
 pub struct TextureCache {
-    textures: HashMap<AssetHandle<Texture>, wgpu::Texture>,
+    textures: Vec<Option<wgpu::Texture>>,
 }
 
 impl TextureCache {
     pub fn new() -> Self {
-        Self {
-            textures: HashMap::new(),
-        }
+        let mut textures = vec![];
+        textures.resize_with(MAX_TEXTURE_COUNT, || None);
+        Self { textures }
     }
 
-    pub fn has(&self, handle: AssetHandle<Texture>) -> bool {
-        self.textures.contains_key(&handle)
+    pub fn has(&self, handle: AssetHandle<TextureAsset>) -> bool {
+        self.textures[handle.id()].is_some()
     }
 
-    pub fn get(&self, handle: AssetHandle<Texture>) -> &wgpu::Texture {
-        &self.textures[&handle]
+    pub fn get(&self, handle: AssetHandle<TextureAsset>) -> Option<&wgpu::Texture> {
+        self.textures[handle.id()].as_ref()
     }
 
     pub fn load_to_vram(
         &mut self,
-        handle: AssetHandle<Texture>,
-        texture: &Texture,
+        handle: AssetHandle<TextureAsset>,
+        texture: &TextureAsset,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
     ) -> &wgpu::Texture {
@@ -88,7 +90,7 @@ impl TextureCache {
             texture_size,
         );
 
-        self.textures.insert(handle, texture);
-        &self.textures[&handle]
+        self.textures[handle.id()] = Some(texture);
+        self.textures[handle.id()].as_ref().unwrap()
     }
 }
