@@ -15,6 +15,8 @@ pub enum AssetError {
     PathCanonicalizationFailed,
     ImageDecodingFailed,
     ReadFailed,
+    AssetPathIsInvalidUTF8,
+    ExecutablePathAcquisitionFailed(std::io::Error),
     RonAssetParsingFailed(ron::error::SpannedError),
 }
 
@@ -25,6 +27,7 @@ pub struct AssetHandle<T> {
 }
 
 impl<T> AssetHandle<T> {
+    #[must_use]
     pub fn id(&self) -> usize {
         self.id
     }
@@ -48,7 +51,7 @@ impl<T> Eq for AssetHandle<T> {}
 
 impl<T> std::hash::Hash for AssetHandle<T> {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.id.hash(state)
+        self.id.hash(state);
     }
 }
 
@@ -92,14 +95,19 @@ where
         {
             PathBuf::from(manifest_path)
         } else {
-            let mut path = std::env::current_exe().unwrap();
+            let mut path =
+                std::env::current_exe().map_err(AssetError::ExecutablePathAcquisitionFailed)?;
             path.pop();
             path
         };
 
         resolved_asset_path.push("assets/");
         resolved_asset_path.push(asset_path);
-        let bytes = FS::read_bytes(resolved_asset_path.to_str().unwrap())?;
+        let bytes = FS::read_bytes(
+            resolved_asset_path
+                .to_str()
+                .ok_or(AssetError::AssetPathIsInvalidUTF8)?,
+        )?;
         let asset = A::Loader::load(&bytes)?;
         let assets = self
             .assets
@@ -110,12 +118,11 @@ where
         Ok(AssetHandle::new(asset_id))
     }
 
+    #[must_use]
     pub fn get<T: 'static>(&self, handle: AssetHandle<T>) -> Option<&T> {
-        Some(
-            self.assets[&TypeId::of::<T>()]
-                .get(handle.id)?
-                .downcast_ref()?,
-        )
+        self.assets[&TypeId::of::<T>()]
+            .get(handle.id)?
+            .downcast_ref()
     }
 }
 
@@ -129,6 +136,10 @@ where
 }
 
 pub trait FileSystem {
+    /// Reads the content of the file at the given path
+    ///
+    /// # Errors
+    /// An error will be returned if the file cannot be read
     fn read_bytes(path: &str) -> Result<Vec<u8>>;
 }
 
@@ -159,14 +170,14 @@ where
     T: RonAsset + for<'a> serde::Deserialize<'a> + serde::Serialize,
 {
     fn load(file_content: &[u8]) -> Result<T> {
-        ron::de::from_bytes(file_content).map_err(|e| AssetError::RonAssetParsingFailed(e))
+        ron::de::from_bytes(file_content).map_err(AssetError::RonAssetParsingFailed)
     }
 }
 
 pub struct FS;
 impl FileSystem for FS {
     fn read_bytes(path: &str) -> Result<Vec<u8>> {
-        Ok(std::fs::read(path).map_err(|_| AssetError::ReadFailed)?)
+        std::fs::read(path).map_err(|_| AssetError::ReadFailed)
     }
 }
 
