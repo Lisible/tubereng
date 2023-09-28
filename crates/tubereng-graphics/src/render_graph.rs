@@ -113,7 +113,7 @@ impl RenderGraph {
                 buffers: &[Vertex::buffer_layout()],
             },
             primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
+                topology: render_pass.primitive_topology,
                 strip_index_format: None,
                 front_face: wgpu::FrontFace::Ccw,
                 cull_mode: Some(wgpu::Face::Back),
@@ -154,6 +154,7 @@ pub struct RenderPass {
     shader_identifier: &'static str,
     render_targets: Vec<RenderTargetId>,
     dispatch_fn: BoxedRenderPassDispatchFn,
+    primitive_topology: wgpu::PrimitiveTopology,
 }
 
 impl RenderPass {
@@ -171,6 +172,7 @@ pub struct RenderPassBuilder<'a> {
     render_graph: &'a mut RenderGraph,
     shader_identifier: Option<&'static str>,
     render_targets: Vec<RenderTargetId>,
+    primitive_topology: wgpu::PrimitiveTopology,
 }
 
 impl<'a> RenderPassBuilder<'a> {
@@ -180,6 +182,7 @@ impl<'a> RenderPassBuilder<'a> {
             render_graph,
             shader_identifier: None,
             render_targets: vec![],
+            primitive_topology: wgpu::PrimitiveTopology::TriangleList,
         }
     }
 
@@ -195,6 +198,12 @@ impl<'a> RenderPassBuilder<'a> {
         self
     }
 
+    #[must_use]
+    pub fn with_primitive_topology(mut self, primitive_topology: wgpu::PrimitiveTopology) -> Self {
+        self.primitive_topology = primitive_topology;
+        self
+    }
+
     pub fn dispatch<F>(self, dispatch_fn: F)
     where
         F: 'static + for<'l> Fn(&mut wgpu::RenderPass<'l>, &DrawCommand, &'l MaterialCache),
@@ -203,6 +212,7 @@ impl<'a> RenderPassBuilder<'a> {
             identifier: self.identifier,
             shader_identifier: self.shader_identifier.expect("Missing shader identifier"),
             render_targets: self.render_targets,
+            primitive_topology: self.primitive_topology,
             dispatch_fn: Box::new(dispatch_fn),
         });
     }
