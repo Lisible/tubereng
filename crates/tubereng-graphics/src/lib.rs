@@ -7,7 +7,7 @@ use texture::TextureCache;
 use tubereng_assets::{AssetHandle, AssetStore};
 
 use camera::{ActiveCamera, Camera, CameraUniform, OPENGL_TO_WGPU_MATRIX};
-use geometry::Model;
+use geometry::{Model, ModelAsset, ModelCache};
 use render_graph::{RenderGraph, RenderPass};
 use tubereng_core::Transform;
 use tubereng_ecs::{entity::EntityStore, query::Q};
@@ -49,12 +49,12 @@ pub struct Renderer {
 
     pipelines: HashMap<String, wgpu::RenderPipeline>,
     shader_modules: HashMap<String, wgpu::ShaderModule>,
-    models: HashMap<String, Model>,
     vertex_buffers: Vec<wgpu::Buffer>,
     index_buffers: Vec<wgpu::Buffer>,
     draw_commands: Vec<DrawCommand>,
     texture_cache: TextureCache,
     material_cache: MaterialCache,
+    model_cache: ModelCache,
     material_bind_group_layout: wgpu::BindGroupLayout,
     mesh_uniform_buffer: wgpu::Buffer,
     mesh_bind_group_layout: wgpu::BindGroupLayout,
@@ -125,12 +125,6 @@ impl Renderer {
         let material_bind_group_layout = Self::create_material_bind_group_layout(&device);
         let mut vertex_buffers = vec![];
         let mut index_buffers = vec![];
-        let mut models = HashMap::new();
-        models.insert(
-            "_cube".into(),
-            Model::new_cube(&device, &mut vertex_buffers, &mut index_buffers),
-        );
-
         let material_cache = MaterialCache::new(&device);
 
         Self {
@@ -146,7 +140,6 @@ impl Renderer {
             camera_buffer,
             camera_bind_group_layout,
             camera_bind_group,
-            models,
             draw_commands: vec![],
             vertex_buffers,
             index_buffers,
@@ -155,6 +148,7 @@ impl Renderer {
             mesh_bind_group,
             texture_cache: TextureCache::new(),
             material_cache,
+            model_cache: ModelCache::new(),
             material_bind_group_layout,
         }
     }
@@ -283,15 +277,18 @@ impl Renderer {
             bytemuck::cast_slice(&[self.camera_uniform]),
         );
 
-        let cube_model = &self.models["_cube"];
-        for (i, (cube, transform)) in Q::<(&Cube, &Transform)>::new(entity_store)
-            .iter()
-            .enumerate()
+        for (i, (model, material, transform)) in Q::<(
+            &AssetHandle<ModelAsset>,
+            &AssetHandle<MaterialAsset>,
+            &Transform,
+        )>::new(entity_store)
+        .iter()
+        .enumerate()
         {
-            let cube_material_handle = cube.material;
-            if !self.material_cache.has(cube_material_handle) {
+            let material_handle = *material;
+            if !self.material_cache.has(material_handle) {
                 self.material_cache.load(
-                    cube_material_handle,
+                    material_handle,
                     asset_store,
                     &mut self.texture_cache,
                     &self.material_bind_group_layout,
@@ -300,12 +297,24 @@ impl Renderer {
                 );
             }
 
-            for mesh in &cube_model.meshes {
+            let model_handle = *model;
+            if !self.model_cache.has(model_handle) {
+                self.model_cache.load(
+                    model_handle,
+                    asset_store,
+                    &mut self.vertex_buffers,
+                    &mut self.index_buffers,
+                    &self.device,
+                );
+            }
+
+            let model = self.model_cache.get(model_handle);
+            for mesh in &model.meshes {
                 self.draw_commands.push(DrawCommand {
                     vertex_buffer: mesh.vertex_buffer,
                     index_buffer: mesh.index_buffer,
                     element_count: mesh.element_count,
-                    material_handle: cube_material_handle,
+                    material_handle,
                 });
 
                 self.queue.write_buffer(

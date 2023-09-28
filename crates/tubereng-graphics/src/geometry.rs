@@ -1,6 +1,99 @@
-use tubereng_assets::{Asset, AssetLoader};
+use tubereng_assets::{Asset, AssetHandle, AssetLoader, AssetStore};
 use tubereng_obj::OBJParser;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
+
+#[derive(Debug)]
+pub struct ModelAsset {
+    mesh_descriptions: Vec<MeshDescription>,
+}
+
+#[derive(Debug)]
+pub struct MeshDescription {
+    vertices: Vec<Vertex>,
+    indices: Option<Vec<usize>>,
+}
+
+impl Asset for ModelAsset {
+    type Loader = ModelAssetLoader;
+}
+
+pub struct ModelAssetLoader;
+impl AssetLoader<ModelAsset> for ModelAssetLoader {
+    fn load(file_content: &[u8]) -> tubereng_assets::Result<ModelAsset> {
+        let file_content = String::from_utf8_lossy(file_content);
+        let obj_model = OBJParser::parse(file_content).unwrap();
+
+        let mut vertices = vec![];
+        for face in &obj_model.faces {
+            for triplet in &face.triplets {
+                let pos = &obj_model.geometric_vertices[triplet.geometric_vertex - 1];
+                let uv = &obj_model.texture_vertices[triplet.texture_vertex.unwrap() - 1];
+                vertices.push(Vertex {
+                    position: [pos.x, pos.y, pos.z],
+                    texture_coordinates: [uv.u, uv.v],
+                });
+            }
+        }
+
+        Ok(ModelAsset {
+            mesh_descriptions: vec![MeshDescription {
+                vertices,
+                indices: None,
+            }],
+        })
+    }
+}
+
+const MAX_MODEL_COUNT: usize = 1024;
+pub struct ModelCache {
+    models: Vec<Option<Model>>,
+}
+
+impl ModelCache {
+    pub fn new() -> Self {
+        let mut models = vec![];
+        models.resize_with(MAX_MODEL_COUNT, || None);
+        Self { models }
+    }
+
+    pub fn has(&self, handle: AssetHandle<ModelAsset>) -> bool {
+        self.models[handle.id()].is_some()
+    }
+
+    pub fn get(&self, handle: AssetHandle<ModelAsset>) -> &Model {
+        &self.models[handle.id()].as_ref().unwrap()
+    }
+
+    pub fn load(
+        &mut self,
+        model_asset_handle: AssetHandle<ModelAsset>,
+        asset_store: &mut AssetStore,
+        vertex_buffers: &mut Vec<wgpu::Buffer>,
+        index_buffers: &mut Vec<wgpu::Buffer>,
+        device: &wgpu::Device,
+    ) {
+        let model_asset = asset_store.get(model_asset_handle).unwrap();
+
+        let mut meshes = vec![];
+        for mesh_description in &model_asset.mesh_descriptions {
+            vertex_buffers.push(device.create_buffer_init(&BufferInitDescriptor {
+                label: None,
+                contents: bytemuck::cast_slice(&mesh_description.vertices),
+                usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::VERTEX,
+            }));
+
+            let vertex_buffer = vertex_buffers.len() - 1;
+
+            meshes.push(Mesh {
+                vertex_buffer,
+                index_buffer: None,
+                element_count: mesh_description.vertices.len() as u32,
+            })
+        }
+
+        self.models[model_asset_handle.id()] = Some(Model { meshes })
+    }
+}
 
 pub struct Model {
     pub meshes: Vec<Mesh>,
@@ -42,29 +135,6 @@ impl Model {
                 element_count: 36,
             }],
         }
-    }
-}
-
-impl Asset for Model {
-    type Loader = ModelLoader;
-}
-
-pub struct ModelLoader;
-impl ModelLoader {
-    fn parse_obj<S>(obj_file_content: S) -> tubereng_assets::Result<Model>
-    where
-        S: ToString,
-    {
-        let obj_file_content_string = obj_file_content.to_string();
-        dbg!(obj_file_content_string);
-        Ok(Model { meshes: vec![] })
-    }
-}
-
-impl AssetLoader<Model> for ModelLoader {
-    fn load(file_content: &[u8]) -> tubereng_assets::Result<Model> {
-        let file_content = String::from_utf8_lossy(file_content);
-        Self::parse_obj(file_content)
     }
 }
 
