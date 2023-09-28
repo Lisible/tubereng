@@ -16,6 +16,7 @@ use wgpu::{util::DeviceExt, BindGroupLayoutDescriptor, BindGroupLayoutEntry};
 use winit::{dpi::PhysicalSize, window::Window};
 
 pub type Result<T> = std::result::Result<T, GraphicsError>;
+#[derive(Debug)]
 pub enum GraphicsError {
     ModelAssetNotFound,
     MaterialAssetNotFound,

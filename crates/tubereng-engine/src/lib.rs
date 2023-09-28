@@ -34,18 +34,22 @@ impl Engine {
         self.ecs.execute_pending_commands();
     }
 
+    /// # Panics
+    /// Might panic if the rendering fails
     pub fn render(&mut self) {
         let renderer = self
             .renderer
             .as_mut()
             .expect("The renderer is uninitialized");
-        renderer.prepare_render(
-            self.ecs.entity_store(),
-            &mut self
-                .ecs
-                .resource_mut::<AssetStore>()
-                .expect("AssetStore is not present in the resources"),
-        );
+        renderer
+            .prepare_render(
+                self.ecs.entity_store(),
+                &mut self
+                    .ecs
+                    .resource_mut::<AssetStore>()
+                    .expect("AssetStore is not present in the resources"),
+            )
+            .unwrap();
         renderer.render();
     }
 
