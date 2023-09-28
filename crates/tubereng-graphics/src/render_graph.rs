@@ -71,10 +71,14 @@ impl RenderGraph {
                 );
                 wgpu_render_pass
                     .set_vertex_buffer(0, ctx.vertex_buffers[draw_command.vertex_buffer].slice(..));
-                wgpu_render_pass.set_index_buffer(
-                    ctx.index_buffers[draw_command.index_buffer].slice(..),
-                    wgpu::IndexFormat::Uint16,
-                );
+
+                if let Some(index_buffer) = draw_command.index_buffer {
+                    wgpu_render_pass.set_index_buffer(
+                        ctx.index_buffers[index_buffer].slice(..),
+                        wgpu::IndexFormat::Uint16,
+                    );
+                }
+
                 (render_pass.dispatch_fn)(&mut wgpu_render_pass, draw_command, ctx.material_cache);
             }
         }

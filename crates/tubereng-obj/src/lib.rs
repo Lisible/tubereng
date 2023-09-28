@@ -118,7 +118,7 @@ fn parse_triplet(triplet_str: &str) -> Result<Triplet, OBJParseError> {
 
     let texture_vertex_str = split_triplet.next();
     let texture_vertex = if let Some(texture_vertex_str) = texture_vertex_str {
-        if texture_vertex_str.is_empty() {
+        if !texture_vertex_str.is_empty() {
             Some(
                 texture_vertex_str
                     .parse()
@@ -133,7 +133,7 @@ fn parse_triplet(triplet_str: &str) -> Result<Triplet, OBJParseError> {
 
     let vertex_normal_str = split_triplet.next();
     let vertex_normal = if let Some(vertex_normal_str) = vertex_normal_str {
-        if vertex_normal_str.is_empty() {
+        if !vertex_normal_str.is_empty() {
             Some(
                 vertex_normal_str
                     .parse()
@@ -167,10 +167,10 @@ fn parse_weight(weight_str: &str) -> Result<f32, OBJParseError> {
 
 #[derive(Default, Debug, Clone)]
 pub struct OBJModel {
-    geometric_vertices: Vec<GeometricVertex>,
-    texture_vertices: Vec<TextureVertex>,
-    vertex_normals: Vec<VertexNormal>,
-    faces: Vec<Face>,
+    pub geometric_vertices: Vec<GeometricVertex>,
+    pub texture_vertices: Vec<TextureVertex>,
+    pub vertex_normals: Vec<VertexNormal>,
+    pub faces: Vec<Face>,
 }
 
 #[derive(Debug, Clone)]

@@ -344,7 +344,11 @@ impl Renderer {
             .dispatch(move |rpass, draw_command, material_cache| {
                 let material = material_cache.get(draw_command.material_handle);
                 material.bind(2, rpass);
-                rpass.draw_indexed(0..draw_command.element_count, 0, 0..1);
+                if draw_command.index_buffer.is_some() {
+                    rpass.draw_indexed(0..draw_command.element_count, 0, 0..1);
+                } else {
+                    rpass.draw(0..draw_command.element_count, 0..1);
+                }
             });
 
         render_graph.execute(&mut RenderingContext::new(&mut encoder, self));
@@ -393,7 +397,7 @@ impl Renderer {
 
 pub struct DrawCommand {
     vertex_buffer: usize,
-    index_buffer: usize,
+    index_buffer: Option<usize>,
     element_count: u32,
     material_handle: AssetHandle<MaterialAsset>,
 }

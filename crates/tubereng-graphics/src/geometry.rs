@@ -1,3 +1,5 @@
+use tubereng_assets::{Asset, AssetLoader};
+use tubereng_obj::OBJParser;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 
 pub struct Model {
@@ -10,70 +12,65 @@ impl Model {
         vertex_buffers: &mut Vec<wgpu::Buffer>,
         index_buffers: &mut Vec<wgpu::Buffer>,
     ) -> Self {
+        let obj_model = OBJParser::parse(include_str!("./cube.obj")).unwrap();
+        let mut vertices = vec![];
+        for face in &obj_model.faces {
+            for triplet in &face.triplets {
+                let geometric_vertex_index = triplet.geometric_vertex;
+                let pos = &obj_model.geometric_vertices[geometric_vertex_index - 1];
+                let texture_vertex_index = triplet.texture_vertex.unwrap();
+                let uv = &obj_model.texture_vertices[texture_vertex_index - 1];
+                vertices.push(Vertex {
+                    position: [pos.x, pos.y, pos.z],
+                    texture_coordinates: [uv.u, uv.v],
+                });
+            }
+        }
+
         let vertex_buffer = device.create_buffer_init(&BufferInitDescriptor {
             label: None,
-            contents: bytemuck::cast_slice(&[
-                Vertex {
-                    position: [0.5f32, -0.5f32, -0.5f32],
-                    texture_coordinates: [0.0, 0.0],
-                },
-                Vertex {
-                    position: [0.5f32, -0.5f32, 0.5f32],
-                    texture_coordinates: [0.0, 1.0],
-                },
-                Vertex {
-                    position: [-0.5f32, -0.5f32, 0.5f32],
-                    texture_coordinates: [1.0, 1.0],
-                },
-                Vertex {
-                    position: [-0.5f32, -0.5f32, -0.5f32],
-                    texture_coordinates: [1.0, 1.0],
-                },
-                Vertex {
-                    position: [0.5f32, 0.5f32, -0.5f32],
-                    texture_coordinates: [1.0, 0.0],
-                },
-                Vertex {
-                    position: [0.5f32, 0.5f32, 0.5f32],
-                    texture_coordinates: [0.0, 0.0],
-                },
-                Vertex {
-                    position: [-0.5f32, 0.5f32, 0.5f32],
-                    texture_coordinates: [1.0, 0.0],
-                },
-                Vertex {
-                    position: [-0.5f32, 0.5f32, -0.5f32],
-                    texture_coordinates: [0.0, 1.0],
-                },
-            ]),
+            contents: bytemuck::cast_slice(&vertices),
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::VERTEX,
         });
 
-        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: None,
-            contents: bytemuck::cast_slice(&[
-                4u16, 2, 0, 2, 7, 3, 6, 5, 7, 1, 7, 5, 0, 3, 1, 4, 1, 5, 4, 6, 2, 2, 6, 7, 6, 4, 5,
-                1, 3, 7, 0, 2, 3, 4, 0, 1,
-            ]),
-            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::INDEX,
-        });
-
         vertex_buffers.push(vertex_buffer);
-        index_buffers.push(index_buffer);
 
         Self {
             meshes: vec![Mesh {
                 vertex_buffer: vertex_buffers.len() - 1,
-                index_buffer: index_buffers.len() - 1,
+                index_buffer: None,
                 element_count: 36,
             }],
         }
     }
 }
 
+impl Asset for Model {
+    type Loader = ModelLoader;
+}
+
+pub struct ModelLoader;
+impl ModelLoader {
+    fn parse_obj<S>(obj_file_content: S) -> tubereng_assets::Result<Model>
+    where
+        S: ToString,
+    {
+        let obj_file_content_string = obj_file_content.to_string();
+        dbg!(obj_file_content_string);
+        Ok(Model { meshes: vec![] })
+    }
+}
+
+impl AssetLoader<Model> for ModelLoader {
+    fn load(file_content: &[u8]) -> tubereng_assets::Result<Model> {
+        let file_content = String::from_utf8_lossy(file_content);
+        Self::parse_obj(file_content)
+    }
+}
+
 pub struct Mesh {
     pub(crate) vertex_buffer: usize,
-    pub(crate) index_buffer: usize,
+    pub(crate) index_buffer: Option<usize>,
     pub(crate) element_count: u32,
 }
 

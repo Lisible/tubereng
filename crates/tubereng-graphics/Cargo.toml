@@ -9,6 +9,7 @@ edition = "2021"
 tubereng-core = { path = "../tubereng-core" }
 tubereng-math = { path = "../tubereng-math" }
 tubereng-ecs = { path = "../tubereng-ecs" }
+tubereng-obj = { path = "../tubereng-obj" }
 tubereng-assets = { path = "../tubereng-assets" }
 image = "0.24"
 winit = "0.28"
