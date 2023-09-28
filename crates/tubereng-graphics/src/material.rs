@@ -1,4 +1,4 @@
-use crate::texture::TextureCache;
+use crate::{texture::TextureCache, GraphicsError, Result};
 use tubereng_assets::{AssetHandle, AssetStore, RonAsset};
 
 pub type MaterialId = usize;
@@ -27,21 +27,26 @@ pub struct MaterialCache {
 }
 
 impl MaterialCache {
-    pub fn new(device: &wgpu::Device) -> Self {
+    #[must_use]
+    pub fn new(_device: &wgpu::Device) -> Self {
         let mut materials = vec![];
         materials.resize_with(MAX_MATERIAL_COUNT, || None);
 
         Self { materials }
     }
 
+    #[must_use]
     pub fn has(&self, handle: AssetHandle<MaterialAsset>) -> bool {
         self.materials[handle.id()].is_some()
     }
 
-    pub fn get(&self, handle: AssetHandle<MaterialAsset>) -> &Material {
-        &self.materials[handle.id()].as_ref().unwrap()
+    #[must_use]
+    pub fn get(&self, handle: AssetHandle<MaterialAsset>) -> Option<&Material> {
+        self.materials[handle.id()].as_ref()
     }
 
+    /// # Errors
+    /// This method might fail if an error occurs while loading the material
     pub fn load(
         &mut self,
         material_asset_handle: AssetHandle<MaterialAsset>,
@@ -50,13 +55,19 @@ impl MaterialCache {
         material_bind_group_layout: &wgpu::BindGroupLayout,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-    ) {
+    ) -> Result<()> {
         let texture = {
-            let material = asset_store.get(material_asset_handle).unwrap();
+            let material = asset_store
+                .get(material_asset_handle)
+                .ok_or(GraphicsError::MaterialAssetNotFound)?;
             material.texture.clone()
         };
-        let texture_asset_handle = asset_store.load(&texture).unwrap();
-        let texture_asset = asset_store.get(texture_asset_handle).unwrap();
+        let texture_asset_handle = asset_store
+            .load(&texture)
+            .map_err(GraphicsError::AssetError)?;
+        let texture_asset = asset_store
+            .get(texture_asset_handle)
+            .ok_or(GraphicsError::TextureAssetNotFound)?;
         let texture =
             texture_store.load_to_vram(texture_asset_handle, texture_asset, device, queue);
         let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
@@ -87,5 +98,7 @@ impl MaterialCache {
                 ],
             }),
         });
+
+        Ok(())
     }
 }

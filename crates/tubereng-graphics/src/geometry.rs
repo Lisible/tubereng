@@ -1,3 +1,4 @@
+use crate::{GraphicsError, Result};
 use tubereng_assets::{Asset, AssetHandle, AssetLoader, AssetStore};
 use tubereng_obj::OBJParser;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
@@ -10,7 +11,7 @@ pub struct ModelAsset {
 #[derive(Debug)]
 pub struct MeshDescription {
     vertices: Vec<Vertex>,
-    indices: Option<Vec<usize>>,
+    _indices: Option<Vec<usize>>,
 }
 
 impl Asset for ModelAsset {
@@ -38,7 +39,7 @@ impl AssetLoader<ModelAsset> for ModelAssetLoader {
         Ok(ModelAsset {
             mesh_descriptions: vec![MeshDescription {
                 vertices,
-                indices: None,
+                _indices: None,
             }],
         })
     }
@@ -50,29 +51,36 @@ pub struct ModelCache {
 }
 
 impl ModelCache {
+    #[must_use]
     pub fn new() -> Self {
         let mut models = vec![];
         models.resize_with(MAX_MODEL_COUNT, || None);
         Self { models }
     }
 
+    #[must_use]
     pub fn has(&self, handle: AssetHandle<ModelAsset>) -> bool {
         self.models[handle.id()].is_some()
     }
 
-    pub fn get(&self, handle: AssetHandle<ModelAsset>) -> &Model {
-        &self.models[handle.id()].as_ref().unwrap()
+    #[must_use]
+    pub fn get(&self, handle: AssetHandle<ModelAsset>) -> Option<&Model> {
+        self.models[handle.id()].as_ref()
     }
 
+    /// # Errors
+    /// Mau fail if the model asset is not found in the asset store
     pub fn load(
         &mut self,
         model_asset_handle: AssetHandle<ModelAsset>,
         asset_store: &mut AssetStore,
         vertex_buffers: &mut Vec<wgpu::Buffer>,
-        index_buffers: &mut Vec<wgpu::Buffer>,
+        _index_buffers: &mut Vec<wgpu::Buffer>,
         device: &wgpu::Device,
-    ) {
-        let model_asset = asset_store.get(model_asset_handle).unwrap();
+    ) -> Result<()> {
+        let model_asset = asset_store
+            .get(model_asset_handle)
+            .ok_or(GraphicsError::ModelAssetNotFound)?;
 
         let mut meshes = vec![];
         for mesh_description in &model_asset.mesh_descriptions {
@@ -87,55 +95,24 @@ impl ModelCache {
             meshes.push(Mesh {
                 vertex_buffer,
                 index_buffer: None,
-                element_count: mesh_description.vertices.len() as u32,
-            })
+                element_count: u32::try_from(mesh_description.vertices.len())
+                    .map_err(|_| GraphicsError::InvalidMesh)?,
+            });
         }
 
-        self.models[model_asset_handle.id()] = Some(Model { meshes })
+        self.models[model_asset_handle.id()] = Some(Model { meshes });
+        Ok(())
+    }
+}
+
+impl Default for ModelCache {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
 pub struct Model {
     pub meshes: Vec<Mesh>,
-}
-
-impl Model {
-    pub fn new_cube(
-        device: &wgpu::Device,
-        vertex_buffers: &mut Vec<wgpu::Buffer>,
-        index_buffers: &mut Vec<wgpu::Buffer>,
-    ) -> Self {
-        let obj_model = OBJParser::parse(include_str!("./cube.obj")).unwrap();
-        let mut vertices = vec![];
-        for face in &obj_model.faces {
-            for triplet in &face.triplets {
-                let geometric_vertex_index = triplet.geometric_vertex;
-                let pos = &obj_model.geometric_vertices[geometric_vertex_index - 1];
-                let texture_vertex_index = triplet.texture_vertex.unwrap();
-                let uv = &obj_model.texture_vertices[texture_vertex_index - 1];
-                vertices.push(Vertex {
-                    position: [pos.x, pos.y, pos.z],
-                    texture_coordinates: [uv.u, uv.v],
-                });
-            }
-        }
-
-        let vertex_buffer = device.create_buffer_init(&BufferInitDescriptor {
-            label: None,
-            contents: bytemuck::cast_slice(&vertices),
-            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::VERTEX,
-        });
-
-        vertex_buffers.push(vertex_buffer);
-
-        Self {
-            meshes: vec![Mesh {
-                vertex_buffer: vertex_buffers.len() - 1,
-                index_buffer: None,
-                element_count: 36,
-            }],
-        }
-    }
 }
 
 pub struct Mesh {

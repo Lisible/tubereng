@@ -1,4 +1,4 @@
-use std::{collections::HashMap, io::Cursor};
+use std::io::Cursor;
 
 use image;
 use tubereng_assets::{Asset, AssetError, AssetHandle, AssetLoader};
@@ -35,16 +35,19 @@ pub struct TextureCache {
 }
 
 impl TextureCache {
+    #[must_use]
     pub fn new() -> Self {
         let mut textures = vec![];
         textures.resize_with(MAX_TEXTURE_COUNT, || None);
         Self { textures }
     }
 
+    #[must_use]
     pub fn has(&self, handle: AssetHandle<TextureAsset>) -> bool {
         self.textures[handle.id()].is_some()
     }
 
+    #[must_use]
     pub fn get(&self, handle: AssetHandle<TextureAsset>) -> Option<&wgpu::Texture> {
         self.textures[handle.id()].as_ref()
     }
@@ -56,8 +59,8 @@ impl TextureCache {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
     ) -> &wgpu::Texture {
-        let rgba = texture.image.to_rgba8();
         use image::GenericImageView;
+        let rgba = texture.image.to_rgba8();
         let dimensions = texture.image.dimensions();
         let texture_size = wgpu::Extent3d {
             width: dimensions.0,
@@ -91,6 +94,13 @@ impl TextureCache {
         );
 
         self.textures[handle.id()] = Some(texture);
-        self.textures[handle.id()].as_ref().unwrap()
+        // SAFETY: We just assigned this texture so it is present
+        unsafe { self.textures[handle.id()].as_ref().unwrap_unchecked() }
+    }
+}
+
+impl Default for TextureCache {
+    fn default() -> Self {
+        Self::new()
     }
 }

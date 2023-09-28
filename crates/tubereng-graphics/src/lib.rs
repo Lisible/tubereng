@@ -7,13 +7,22 @@ use texture::TextureCache;
 use tubereng_assets::{AssetHandle, AssetStore};
 
 use camera::{ActiveCamera, Camera, CameraUniform, OPENGL_TO_WGPU_MATRIX};
-use geometry::{Model, ModelAsset, ModelCache};
+use geometry::{ModelAsset, ModelCache};
 use render_graph::{RenderGraph, RenderPass};
 use tubereng_core::Transform;
 use tubereng_ecs::{entity::EntityStore, query::Q};
 
 use wgpu::{util::DeviceExt, BindGroupLayoutDescriptor, BindGroupLayoutEntry};
 use winit::{dpi::PhysicalSize, window::Window};
+
+pub type Result<T> = std::result::Result<T, GraphicsError>;
+pub enum GraphicsError {
+    ModelAssetNotFound,
+    MaterialAssetNotFound,
+    TextureAssetNotFound,
+    InvalidMesh,
+    AssetError(tubereng_assets::AssetError),
+}
 
 #[derive(Debug)]
 pub struct Cube {
@@ -123,8 +132,8 @@ impl Renderer {
         let (mesh_bind_group_layout, mesh_bind_group) =
             Self::create_mesh_bind_group(&device, &mesh_uniform_buffer);
         let material_bind_group_layout = Self::create_material_bind_group_layout(&device);
-        let mut vertex_buffers = vec![];
-        let mut index_buffers = vec![];
+        let vertex_buffers = vec![];
+        let index_buffers = vec![];
         let material_cache = MaterialCache::new(&device);
 
         Self {
@@ -166,8 +175,9 @@ impl Renderer {
 
     fn request_device(
         adapter: &wgpu::Adapter,
-    ) -> impl Future<Output = Result<(wgpu::Device, wgpu::Queue), wgpu::RequestDeviceError>> + Send
-    {
+    ) -> impl Future<
+        Output = std::result::Result<(wgpu::Device, wgpu::Queue), wgpu::RequestDeviceError>,
+    > + Send {
         adapter.request_device(
             &wgpu::DeviceDescriptor {
                 label: None,
@@ -260,7 +270,13 @@ impl Renderer {
         (camera_bind_group_layout, camera_bind_group)
     }
 
-    pub fn prepare_render(&mut self, entity_store: &EntityStore, asset_store: &mut AssetStore) {
+    /// # Errors
+    /// An error may be returned if the render preparation fails
+    pub fn prepare_render(
+        &mut self,
+        entity_store: &EntityStore,
+        asset_store: &mut AssetStore,
+    ) -> Result<()> {
         let camera_query = Q::<(&ActiveCamera, &Camera, &Transform)>::new(entity_store);
         let (_, camera, camera_transform) = camera_query.iter().next().expect("Camera not found");
         self.camera_uniform.set_view_projection_matrix(
@@ -294,7 +310,7 @@ impl Renderer {
                     &self.material_bind_group_layout,
                     &self.device,
                     &self.queue,
-                );
+                )?;
             }
 
             let model_handle = *model;
@@ -305,10 +321,13 @@ impl Renderer {
                     &mut self.vertex_buffers,
                     &mut self.index_buffers,
                     &self.device,
-                );
+                )?;
             }
 
-            let model = self.model_cache.get(model_handle);
+            let model = self
+                .model_cache
+                .get(model_handle)
+                .expect("Model not found in cache");
             for mesh in &model.meshes {
                 self.draw_commands.push(DrawCommand {
                     vertex_buffer: mesh.vertex_buffer,
@@ -327,6 +346,8 @@ impl Renderer {
                 );
             }
         }
+
+        Ok(())
     }
 
     pub fn render(&mut self) {
@@ -351,7 +372,9 @@ impl Renderer {
             .with_shader("shader")
             .with_render_target(render_target)
             .dispatch(move |rpass, draw_command, material_cache| {
-                let material = material_cache.get(draw_command.material_handle);
+                let material = material_cache
+                    .get(draw_command.material_handle)
+                    .expect("Material not found in cache");
                 material.bind(2, rpass);
                 if draw_command.index_buffer.is_some() {
                     rpass.draw_indexed(0..draw_command.element_count, 0, 0..1);
