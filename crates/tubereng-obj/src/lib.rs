@@ -5,6 +5,7 @@ use std::num::{ParseFloatError, ParseIntError};
 #[derive(Debug)]
 pub enum OBJParseError {
     MissingCoordinate,
+    MissingPrefix,
     CoordinateParseError(ParseFloatError),
     WeightParseError(ParseFloatError),
     NotEnoughTripletsInFace,
@@ -14,12 +15,15 @@ pub enum OBJParseError {
 
 pub struct OBJParser;
 impl OBJParser {
+    /// # Errors
+    /// This function may fail if the file is invalid
+    #[allow(clippy::needless_pass_by_value)]
     pub fn parse<S: ToString>(obj_content: S) -> Result<OBJModel, OBJParseError> {
         let obj_content = obj_content.to_string();
         let mut model = OBJModel::default();
         for line in obj_content.lines() {
             let mut split_line = line.split(' ');
-            let prefix = split_line.next().unwrap();
+            let prefix = split_line.next().ok_or(OBJParseError::MissingPrefix)?;
             match prefix {
                 "v" => model
                     .geometric_vertices
@@ -93,9 +97,9 @@ fn parse_texture_vertex(
     Ok(TextureVertex { u, v, w })
 }
 
-fn parse_face(mut split_line: std::str::Split<char>) -> Result<Face, OBJParseError> {
+fn parse_face(split_line: std::str::Split<char>) -> Result<Face, OBJParseError> {
     let mut triplets = vec![];
-    while let Some(triplet_str) = split_line.next() {
+    for triplet_str in split_line {
         triplets.push(parse_triplet(triplet_str)?);
     }
 
@@ -114,18 +118,18 @@ fn parse_triplet(triplet_str: &str) -> Result<Triplet, OBJParseError> {
         .ok_or(OBJParseError::MissingVertexInTriplet)?;
     let geometric_vertex = geometric_vertex_str
         .parse()
-        .map_err(|e| OBJParseError::TripletComponentParseError(e))?;
+        .map_err(OBJParseError::TripletComponentParseError)?;
 
     let texture_vertex_str = split_triplet.next();
     let texture_vertex = if let Some(texture_vertex_str) = texture_vertex_str {
-        if !texture_vertex_str.is_empty() {
+        if texture_vertex_str.is_empty() {
+            None
+        } else {
             Some(
                 texture_vertex_str
                     .parse()
-                    .map_err(|e| OBJParseError::TripletComponentParseError(e))?,
+                    .map_err(OBJParseError::TripletComponentParseError)?,
             )
-        } else {
-            None
         }
     } else {
         None
@@ -133,14 +137,14 @@ fn parse_triplet(triplet_str: &str) -> Result<Triplet, OBJParseError> {
 
     let vertex_normal_str = split_triplet.next();
     let vertex_normal = if let Some(vertex_normal_str) = vertex_normal_str {
-        if !vertex_normal_str.is_empty() {
+        if vertex_normal_str.is_empty() {
+            None
+        } else {
             Some(
                 vertex_normal_str
                     .parse()
-                    .map_err(|e| OBJParseError::TripletComponentParseError(e))?,
+                    .map_err(OBJParseError::TripletComponentParseError)?,
             )
-        } else {
-            None
         }
     } else {
         None
@@ -154,15 +158,15 @@ fn parse_triplet(triplet_str: &str) -> Result<Triplet, OBJParseError> {
 }
 
 fn parse_coordinate(coordinate_str: &str) -> Result<f32, OBJParseError> {
-    Ok(coordinate_str
+    coordinate_str
         .parse()
-        .map_err(|e| OBJParseError::CoordinateParseError(e))?)
+        .map_err(OBJParseError::CoordinateParseError)
 }
 
 fn parse_weight(weight_str: &str) -> Result<f32, OBJParseError> {
-    Ok(weight_str
+    weight_str
         .parse::<f32>()
-        .map_err(|e| OBJParseError::WeightParseError(e))?)
+        .map_err(OBJParseError::WeightParseError)
 }
 
 #[derive(Default, Debug, Clone)]
@@ -208,6 +212,7 @@ pub struct Triplet {
 }
 
 #[cfg(test)]
+#[allow(clippy::cast_possible_truncation)]
 mod tests {
     use super::*;
 
