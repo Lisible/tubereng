@@ -82,7 +82,7 @@ fn parse_texture_vertex(
 
     let v_str = split_line.next();
     let v = if let Some(v_str) = v_str {
-        parse_coordinate(v_str)?
+        1.0 - parse_coordinate(v_str)?
     } else {
         0.0
     };
