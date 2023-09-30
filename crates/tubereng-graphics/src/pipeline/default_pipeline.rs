@@ -215,6 +215,7 @@ impl RenderPipeline for DefaultRenderPipeline {
             "depth_buffer",
             surface_configuration.width,
             surface_configuration.height,
+            true,
         );
 
         Self {

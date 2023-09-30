@@ -220,6 +220,9 @@ where
             &self.rendering_context.device,
             &self.rendering_context.surface_configuration,
         );
+        self.rendering_context
+            .texture_cache
+            .on_window_resize(&self.rendering_context.device, new_size);
     }
 }
 

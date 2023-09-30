@@ -33,9 +33,11 @@ const MAX_TEXTURE_COUNT: usize = 4096;
 #[derive(Debug, Copy, Clone)]
 pub struct DepthBufferTextureHandle(usize);
 pub struct DepthBufferTexture {
+    pub(crate) label: String,
     pub(crate) texture: wgpu::Texture,
     pub(crate) view: wgpu::TextureView,
     pub(crate) sampler: wgpu::Sampler,
+    pub(crate) recreate_on_window_resize: bool,
 }
 
 pub struct TextureCache {
@@ -71,16 +73,34 @@ impl TextureCache {
         label: &str,
         width: u32,
         height: u32,
+        recreate_on_window_resize: bool,
     ) -> DepthBufferTextureHandle {
+        self.depth_buffer_textures
+            .push(Self::create_depth_buffer_texture_impl(
+                device,
+                label,
+                width,
+                height,
+                recreate_on_window_resize,
+            ));
+        DepthBufferTextureHandle(self.depth_buffer_textures.len() - 1)
+    }
+
+    fn create_depth_buffer_texture_impl(
+        device: &wgpu::Device,
+        label: &str,
+        width: u32,
+        height: u32,
+        recreate_on_window_resize: bool,
+    ) -> DepthBufferTexture {
         let size = wgpu::Extent3d {
             width,
             height,
             depth_or_array_layers: 1,
         };
 
-        let texture_label = format!("{label}_texture");
         let texture_descriptor = wgpu::TextureDescriptor {
-            label: Some(&texture_label),
+            label: Some(&label),
             size,
             mip_level_count: 1,
             sample_count: 1,
@@ -106,12 +126,13 @@ impl TextureCache {
             ..Default::default()
         });
 
-        self.depth_buffer_textures.push(DepthBufferTexture {
+        DepthBufferTexture {
+            label: label.to_string(),
             texture,
             view,
             sampler,
-        });
-        DepthBufferTextureHandle(self.depth_buffer_textures.len() - 1)
+            recreate_on_window_resize,
+        }
     }
 
     pub fn load_to_vram(
@@ -165,6 +186,23 @@ impl TextureCache {
         depth_buffer_texture_handle: DepthBufferTextureHandle,
     ) -> &DepthBufferTexture {
         &self.depth_buffer_textures[depth_buffer_texture_handle.0]
+    }
+
+    pub(crate) fn on_window_resize(&mut self, device: &wgpu::Device, new_size: crate::WindowSize) {
+        for depth_buffer_texture in self
+            .depth_buffer_textures
+            .iter_mut()
+            .filter(|t| t.recreate_on_window_resize)
+        {
+            let new_depth_buffer_texture = Self::create_depth_buffer_texture_impl(
+                device,
+                &depth_buffer_texture.label,
+                new_size.width,
+                new_size.height,
+                true,
+            );
+            *depth_buffer_texture = new_depth_buffer_texture;
+        }
     }
 }
 
