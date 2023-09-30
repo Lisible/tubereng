@@ -48,6 +48,11 @@ pub struct DefaultRenderPipeline {
     camera_buffer: wgpu::Buffer,
     camera_bind_group_layout: wgpu::BindGroupLayout,
     camera_bind_group: wgpu::BindGroup,
+
+    gradient_uniform: GradientUniform,
+    gradient_uniform_buffer: wgpu::Buffer,
+    gradient_uniform_bind_group_layout: wgpu::BindGroupLayout,
+    gradient_uniform_bind_group: wgpu::BindGroup,
 }
 
 impl DefaultRenderPipeline {
@@ -142,6 +147,38 @@ impl DefaultRenderPipeline {
             ],
         })
     }
+
+    fn create_gradient_uniform_bind_group(
+        device: &wgpu::Device,
+        gradient_uniform_buffer: &wgpu::Buffer,
+    ) -> (wgpu::BindGroupLayout, wgpu::BindGroup) {
+        let gradient_uniform_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("gradient_uniform_bind_group_layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            });
+        let gradient_uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("gradient_uniform_bind_group"),
+            layout: &gradient_uniform_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: gradient_uniform_buffer.as_entire_binding(),
+            }],
+        });
+        (
+            gradient_uniform_bind_group_layout,
+            gradient_uniform_bind_group,
+        )
+    }
 }
 
 impl RenderPipeline for DefaultRenderPipeline {
@@ -153,8 +190,12 @@ impl RenderPipeline for DefaultRenderPipeline {
             label: Some("Shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
         });
-
         shader_modules.insert("shader".into(), shader);
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Gradient sky shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("gradient_sky.wgsl").into()),
+        });
+        shader_modules.insert("gradient_sky".into(), shader);
 
         let camera_uniform = CameraUniform::new();
         let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -175,6 +216,21 @@ impl RenderPipeline for DefaultRenderPipeline {
             Self::create_mesh_bind_group(device, &mesh_uniform_buffer);
         let material_bind_group_layout = Self::create_material_bind_group_layout(device);
 
+        let gradient_uniform = GradientUniform {
+            top_color: [0.192, 0.302, 0.475, 1.0],
+            bottom_color: [0.324, 0.179, 0.069, 1.0],
+        };
+
+        let gradient_uniform_buffer =
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("gradient_uniform_buffer"),
+                contents: bytemuck::cast_slice(&[gradient_uniform]),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            });
+
+        let (gradient_uniform_bind_group_layout, gradient_uniform_bind_group) =
+            Self::create_gradient_uniform_bind_group(device, &gradient_uniform_buffer);
+
         Self {
             material_bind_group_layout,
             mesh_uniform_buffer,
@@ -184,6 +240,10 @@ impl RenderPipeline for DefaultRenderPipeline {
             camera_buffer,
             camera_bind_group_layout,
             camera_bind_group,
+            gradient_uniform,
+            gradient_uniform_buffer,
+            gradient_uniform_bind_group_layout,
+            gradient_uniform_bind_group,
         }
     }
 
@@ -274,6 +334,24 @@ impl RenderPipeline for DefaultRenderPipeline {
     ) -> Result<()> {
         let mut render_graph = RenderGraph::new();
         let render_target = render_graph.register_render_target(view);
+
+        RenderPass::new("skybox", &mut render_graph)
+            .with_no_vertex_buffer()
+            .with_shader("gradient_sky")
+            .with_render_target(render_target)
+            .with_bind_group_layout(&self.gradient_uniform_bind_group_layout)
+            .dispatch(
+                |rpass,
+                 bind_groups,
+                 draw_commands,
+                 material_cache,
+                 vertex_buffers,
+                 index_buffers| {
+                    rpass.set_bind_group(0, bind_groups[0], &[]);
+                    rpass.draw(0..3, 0..1);
+                },
+            );
+
         RenderPass::new("render_pass", &mut render_graph)
             .with_shader("shader")
             .with_render_target(render_target)
@@ -281,31 +359,59 @@ impl RenderPipeline for DefaultRenderPipeline {
             .with_bind_group_layout(&self.mesh_bind_group_layout)
             .with_bind_group_layout(&self.material_bind_group_layout)
             .dispatch(
-                |rpass, bind_groups, draw_command_index, draw_command, material_cache| {
-                    rpass.set_bind_group(0, bind_groups[0], &[]);
-                    rpass.set_bind_group(
-                        1,
-                        bind_groups[1],
-                        &[u32::try_from(draw_command_index * 256).unwrap()],
-                    );
-                    let material = material_cache
-                        .get(draw_command.material_handle)
-                        .expect("Material not found in cache");
-                    material.bind(2, rpass);
-                    if draw_command.index_buffer.is_some() {
-                        rpass.draw_indexed(0..draw_command.element_count, 0, 0..1);
-                    } else {
-                        rpass.draw(0..draw_command.element_count, 0..1);
+                |rpass,
+                 bind_groups,
+                 vertex_buffers,
+                 index_buffers,
+                 draw_commands,
+                 material_cache| {
+                    for (draw_command_index, draw_command) in draw_commands.iter().enumerate() {
+                        rpass.set_vertex_buffer(
+                            0,
+                            vertex_buffers[draw_command.vertex_buffer].slice(..),
+                        );
+                        if let Some(index_buffer) = draw_command.index_buffer {
+                            rpass.set_index_buffer(
+                                index_buffers[index_buffer].slice(..),
+                                wgpu::IndexFormat::Uint16,
+                            )
+                        }
+
+                        rpass.set_bind_group(0, bind_groups[0], &[]);
+                        rpass.set_bind_group(
+                            1,
+                            bind_groups[1],
+                            &[u32::try_from(draw_command_index * 256).unwrap()],
+                        );
+                        let material = material_cache
+                            .get(draw_command.material_handle)
+                            .expect("Material not found in cache");
+                        material.bind(2, rpass);
+                        if draw_command.index_buffer.is_some() {
+                            rpass.draw_indexed(0..draw_command.element_count, 0, 0..1);
+                        } else {
+                            rpass.draw(0..draw_command.element_count, 0..1);
+                        }
                     }
                 },
             );
 
         render_graph.execute(
             command_encoder,
-            &[&self.camera_bind_group, &self.mesh_bind_group],
+            &[
+                &[&self.gradient_uniform_bind_group],
+                &[&self.camera_bind_group, &self.mesh_bind_group],
+            ],
             ctx,
         );
 
         Ok(())
     }
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct GradientUniform {
+    top_color: [f32; 4],
+    bottom_color: [f32; 4],
 }

@@ -31,10 +31,10 @@ impl<'layout> RenderGraph<'layout> {
     pub fn execute(
         &mut self,
         command_encoder: &mut wgpu::CommandEncoder,
-        bind_groups: &[&wgpu::BindGroup],
+        bind_groups: &[&[&wgpu::BindGroup]],
         ctx: &mut RenderingContext,
     ) {
-        for render_pass in &self.render_passes {
+        for (render_pass_index, render_pass) in self.render_passes.iter().enumerate() {
             let mut wgpu_render_pass =
                 command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some(render_pass.identifier),
@@ -63,25 +63,14 @@ impl<'layout> RenderGraph<'layout> {
             }
 
             wgpu_render_pass.set_pipeline(&ctx.pipelines[render_pass.identifier]);
-            for (draw_command_index, draw_command) in ctx.draw_commands.iter().enumerate() {
-                wgpu_render_pass
-                    .set_vertex_buffer(0, ctx.vertex_buffers[draw_command.vertex_buffer].slice(..));
-
-                if let Some(index_buffer) = draw_command.index_buffer {
-                    wgpu_render_pass.set_index_buffer(
-                        ctx.index_buffers[index_buffer].slice(..),
-                        wgpu::IndexFormat::Uint16,
-                    );
-                }
-
-                (render_pass.dispatch_fn)(
-                    &mut wgpu_render_pass,
-                    bind_groups,
-                    draw_command_index,
-                    draw_command,
-                    &ctx.material_cache,
-                );
-            }
+            (render_pass.dispatch_fn)(
+                &mut wgpu_render_pass,
+                bind_groups[render_pass_index],
+                &ctx.vertex_buffers,
+                &ctx.index_buffers,
+                &ctx.draw_commands,
+                &ctx.material_cache,
+            );
         }
     }
 
@@ -98,13 +87,19 @@ impl<'layout> RenderGraph<'layout> {
             push_constant_ranges: &[],
         });
 
+        let vertex_state_buffers = if render_pass.has_vertex_buffer {
+            vec![Vertex::buffer_layout()]
+        } else {
+            vec![]
+        };
+
         device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some(&format!("{}_pipeline", render_pass.identifier)),
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
                 module: shader_module,
                 entry_point: "vs_main",
-                buffers: &[Vertex::buffer_layout()],
+                buffers: &vertex_state_buffers,
             },
             primitive: wgpu::PrimitiveState {
                 topology: render_pass.primitive_topology,
@@ -145,8 +140,9 @@ type BoxedRenderPassDispatchFn = Box<
     dyn for<'l> Fn(
         &mut wgpu::RenderPass<'l>,
         &[&'l wgpu::BindGroup],
-        usize,
-        &DrawCommand,
+        &'l [wgpu::Buffer],
+        &'l [wgpu::Buffer],
+        &[DrawCommand],
         &'l MaterialCache,
     ),
 >;
@@ -157,6 +153,7 @@ pub struct RenderPass<'layout> {
     dispatch_fn: BoxedRenderPassDispatchFn,
     primitive_topology: wgpu::PrimitiveTopology,
     bind_group_layouts: Vec<&'layout wgpu::BindGroupLayout>,
+    has_vertex_buffer: bool,
 }
 
 impl<'layout> RenderPass<'layout> {
@@ -176,6 +173,7 @@ pub struct RenderPassBuilder<'a, 'layout> {
     render_targets: Vec<RenderTargetId>,
     primitive_topology: wgpu::PrimitiveTopology,
     bind_group_layouts: Vec<&'layout wgpu::BindGroupLayout>,
+    has_vertex_buffer: bool,
 }
 
 impl<'a, 'layout> RenderPassBuilder<'a, 'layout> {
@@ -187,6 +185,7 @@ impl<'a, 'layout> RenderPassBuilder<'a, 'layout> {
             render_targets: vec![],
             primitive_topology: wgpu::PrimitiveTopology::TriangleList,
             bind_group_layouts: vec![],
+            has_vertex_buffer: true,
         }
     }
 
@@ -209,6 +208,12 @@ impl<'a, 'layout> RenderPassBuilder<'a, 'layout> {
     }
 
     #[must_use]
+    pub fn with_no_vertex_buffer(mut self) -> Self {
+        self.has_vertex_buffer = false;
+        self
+    }
+
+    #[must_use]
     pub fn with_bind_group_layout(
         mut self,
         bind_group_layout: &'layout wgpu::BindGroupLayout,
@@ -223,8 +228,9 @@ impl<'a, 'layout> RenderPassBuilder<'a, 'layout> {
             + for<'l> Fn(
                 &mut wgpu::RenderPass<'l>,
                 &[&'l wgpu::BindGroup],
-                usize,
-                &DrawCommand,
+                &'l [wgpu::Buffer],
+                &'l [wgpu::Buffer],
+                &[DrawCommand],
                 &'l MaterialCache,
             ),
     {
@@ -235,6 +241,7 @@ impl<'a, 'layout> RenderPassBuilder<'a, 'layout> {
             primitive_topology: self.primitive_topology,
             dispatch_fn: Box::new(dispatch_fn),
             bind_group_layouts: self.bind_group_layouts,
+            has_vertex_buffer: self.has_vertex_buffer,
         });
     }
 }
