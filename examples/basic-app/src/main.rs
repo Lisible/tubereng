@@ -11,8 +11,7 @@ use tubereng::{
     graphics::{
         camera::{ActiveCamera, Camera},
         geometry::ModelAsset,
-        material::{Material, MaterialAsset},
-        Cube,
+        material::MaterialAsset,
     },
     math::{quaternion::Quaternion, vector::Vector3f},
     winit::WinitTuberRunner,

@@ -1,18 +1,13 @@
 #![warn(clippy::pedantic)]
 #![allow(clippy::module_name_repetitions)]
 
+use geometry::ModelCache;
 use material::{MaterialAsset, MaterialCache};
+use pipeline::{DefaultRenderPipeline, RenderPipeline};
 use std::{collections::HashMap, future::Future};
 use texture::TextureCache;
 use tubereng_assets::{AssetHandle, AssetStore};
-
-use camera::{ActiveCamera, Camera, CameraUniform, OPENGL_TO_WGPU_MATRIX};
-use geometry::{ModelAsset, ModelCache};
-use render_graph::{RenderGraph, RenderPass};
-use tubereng_core::Transform;
-use tubereng_ecs::{entity::EntityStore, query::Q};
-
-use wgpu::{util::DeviceExt, BindGroupLayoutDescriptor, BindGroupLayoutEntry};
+use tubereng_ecs::entity::EntityStore;
 use winit::{dpi::PhysicalSize, window::Window};
 
 pub type Result<T> = std::result::Result<T, GraphicsError>;
@@ -33,6 +28,7 @@ pub struct Cube {
 pub mod camera;
 pub mod geometry;
 pub mod material;
+pub mod pipeline;
 pub mod render_graph;
 pub mod texture;
 
@@ -49,33 +45,19 @@ impl WindowSize {
     }
 }
 
-pub struct Renderer {
+pub struct Renderer<R = DefaultRenderPipeline>
+where
+    R: RenderPipeline,
+{
     _window: Window,
-    size: PhysicalSize<u32>,
-    surface: wgpu::Surface,
-    device: wgpu::Device,
-    queue: wgpu::Queue,
-    surface_configuration: wgpu::SurfaceConfiguration,
-
-    pipelines: HashMap<String, wgpu::RenderPipeline>,
-    shader_modules: HashMap<String, wgpu::ShaderModule>,
-    vertex_buffers: Vec<wgpu::Buffer>,
-    index_buffers: Vec<wgpu::Buffer>,
-    draw_commands: Vec<DrawCommand>,
-    texture_cache: TextureCache,
-    material_cache: MaterialCache,
-    model_cache: ModelCache,
-    material_bind_group_layout: wgpu::BindGroupLayout,
-    mesh_uniform_buffer: wgpu::Buffer,
-    mesh_bind_group_layout: wgpu::BindGroupLayout,
-    mesh_bind_group: wgpu::BindGroup,
-    camera_uniform: CameraUniform,
-    camera_buffer: wgpu::Buffer,
-    camera_bind_group_layout: wgpu::BindGroupLayout,
-    camera_bind_group: wgpu::BindGroup,
+    rendering_context: RenderingContext,
+    pipeline: R,
 }
 
-impl Renderer {
+impl<R> Renderer<R>
+where
+    R: RenderPipeline,
+{
     pub async fn new(window: Window) -> Self {
         let size = window.inner_size();
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
@@ -106,60 +88,33 @@ impl Renderer {
             view_formats: vec![],
         };
         surface.configure(&device, &surface_configuration);
-
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
-        });
-
         let mut shader_modules = HashMap::new();
-        shader_modules.insert("shader".into(), shader);
-
-        let camera_uniform = CameraUniform::new();
-        let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("camera"),
-            contents: bytemuck::cast_slice(&[camera_uniform]),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-        let (camera_bind_group_layout, camera_bind_group) =
-            Self::create_camera_bind_group(&device, &camera_buffer);
-
-        let mesh_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("mesh_uniform_buffer"),
-            size: (std::mem::size_of::<MeshUniform>() * 100) as u64,
-            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::UNIFORM,
-            mapped_at_creation: false,
-        });
-        let (mesh_bind_group_layout, mesh_bind_group) =
-            Self::create_mesh_bind_group(&device, &mesh_uniform_buffer);
-        let material_bind_group_layout = Self::create_material_bind_group_layout(&device);
         let vertex_buffers = vec![];
         let index_buffers = vec![];
         let material_cache = MaterialCache::new(&device);
 
-        Self {
-            _window: window,
-            size,
-            surface,
+        let pipeline = R::new(&device, &mut shader_modules);
+
+        let rendering_context = RenderingContext {
             device,
             queue,
-            surface_configuration,
-            pipelines: HashMap::new(),
-            shader_modules,
-            camera_uniform,
-            camera_buffer,
-            camera_bind_group_layout,
-            camera_bind_group,
             draw_commands: vec![],
             vertex_buffers,
             index_buffers,
-            mesh_uniform_buffer,
-            mesh_bind_group_layout,
-            mesh_bind_group,
             texture_cache: TextureCache::new(),
             material_cache,
             model_cache: ModelCache::new(),
-            material_bind_group_layout,
+            size,
+            surface,
+            surface_configuration,
+            pipelines: HashMap::new(),
+            shader_modules,
+        };
+
+        Self {
+            _window: window,
+            pipeline,
+            rendering_context,
         }
     }
 
@@ -204,73 +159,6 @@ impl Renderer {
             .unwrap_or(surface_capabilities.formats[0])
     }
 
-    fn create_mesh_bind_group(
-        device: &wgpu::Device,
-        mesh_uniform_buffer: &wgpu::Buffer,
-    ) -> (wgpu::BindGroupLayout, wgpu::BindGroup) {
-        let mesh_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-            label: Some("mesh_bind_group_layout"),
-            entries: &[BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: true,
-                    min_binding_size: wgpu::BufferSize::new(
-                        std::mem::size_of::<MeshUniform>() as wgpu::BufferAddress
-                    ),
-                },
-                count: None,
-            }],
-        });
-
-        let mesh_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("mesh_bind_group"),
-            layout: &mesh_bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                    buffer: mesh_uniform_buffer,
-                    offset: 0,
-                    size: wgpu::BufferSize::new(
-                        std::mem::size_of::<MeshUniform>() as wgpu::BufferAddress
-                    ),
-                }),
-            }],
-        });
-
-        (mesh_bind_group_layout, mesh_bind_group)
-    }
-
-    fn create_camera_bind_group(
-        device: &wgpu::Device,
-        camera_buffer: &wgpu::Buffer,
-    ) -> (wgpu::BindGroupLayout, wgpu::BindGroup) {
-        let camera_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("camera_bind_group_layout"),
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                }],
-            });
-        let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("camera_bind_group"),
-            layout: &camera_bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: camera_buffer.as_entire_binding(),
-            }],
-        });
-        (camera_bind_group_layout, camera_bind_group)
-    }
-
     /// # Errors
     /// An error may be returned if the render preparation fails
     pub fn prepare_render(
@@ -278,82 +166,16 @@ impl Renderer {
         entity_store: &EntityStore,
         asset_store: &mut AssetStore,
     ) -> Result<()> {
-        let camera_query = Q::<(&ActiveCamera, &Camera, &Transform)>::new(entity_store);
-        let (_, camera, camera_transform) = camera_query.iter().next().expect("Camera not found");
-        self.camera_uniform.set_view_projection_matrix(
-            OPENGL_TO_WGPU_MATRIX
-                * *camera.projection_matrix()
-                * camera_transform
-                    .as_matrix4()
-                    .try_inverse()
-                    .expect("No inverse for camera transform matrix"),
-        );
-        self.queue.write_buffer(
-            &self.camera_buffer,
-            0,
-            bytemuck::cast_slice(&[self.camera_uniform]),
-        );
-
-        for (i, (model, material, transform)) in Q::<(
-            &AssetHandle<ModelAsset>,
-            &AssetHandle<MaterialAsset>,
-            &Transform,
-        )>::new(entity_store)
-        .iter()
-        .enumerate()
-        {
-            let material_handle = *material;
-            if !self.material_cache.has(material_handle) {
-                self.material_cache.load(
-                    material_handle,
-                    asset_store,
-                    &mut self.texture_cache,
-                    &self.material_bind_group_layout,
-                    &self.device,
-                    &self.queue,
-                )?;
-            }
-
-            let model_handle = *model;
-            if !self.model_cache.has(model_handle) {
-                self.model_cache.load(
-                    model_handle,
-                    asset_store,
-                    &mut self.vertex_buffers,
-                    &mut self.index_buffers,
-                    &self.device,
-                )?;
-            }
-
-            let model = self
-                .model_cache
-                .get(model_handle)
-                .expect("Model not found in cache");
-            for mesh in &model.meshes {
-                self.draw_commands.push(DrawCommand {
-                    vertex_buffer: mesh.vertex_buffer,
-                    index_buffer: mesh.index_buffer,
-                    element_count: mesh.element_count,
-                    material_handle,
-                });
-
-                self.queue.write_buffer(
-                    &self.mesh_uniform_buffer,
-                    (i * std::mem::size_of::<MeshUniform>()) as u64,
-                    bytemuck::cast_slice(&[MeshUniform {
-                        world_transform: transform.as_matrix4().into(),
-                        _padding: [0; 24],
-                    }]),
-                );
-            }
-        }
-
-        Ok(())
+        self.pipeline
+            .prepare(&mut self.rendering_context, entity_store, asset_store)
     }
 
-    pub fn render(&mut self) {
+    /// # Errors
+    /// An error may be returned if the rendering fails
+    pub fn render(&mut self) -> Result<()> {
         // TODO add proper error handling
         let output = self
+            .rendering_context
             .surface
             .get_current_texture()
             .expect("Couldn't get surface texture");
@@ -361,34 +183,22 @@ impl Renderer {
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Render Encoder"),
-            });
+        let mut encoder =
+            self.rendering_context
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("Render Encoder"),
+                });
 
-        let mut render_graph = RenderGraph::new();
-        let render_target = render_graph.register_render_target(view);
-        RenderPass::new("render_pass", &mut render_graph)
-            .with_shader("shader")
-            .with_render_target(render_target)
-            .dispatch(move |rpass, draw_command, material_cache| {
-                let material = material_cache
-                    .get(draw_command.material_handle)
-                    .expect("Material not found in cache");
-                material.bind(2, rpass);
-                if draw_command.index_buffer.is_some() {
-                    rpass.draw_indexed(0..draw_command.element_count, 0, 0..1);
-                } else {
-                    rpass.draw(0..draw_command.element_count, 0..1);
-                }
-            });
+        self.pipeline
+            .render(&mut encoder, view, &mut self.rendering_context)?;
 
-        render_graph.execute(&mut RenderingContext::new(&mut encoder, self));
-
-        self.queue.submit(std::iter::once(encoder.finish()));
+        self.rendering_context
+            .queue
+            .submit(std::iter::once(encoder.finish()));
         output.present();
-        self.draw_commands.clear();
+        self.rendering_context.draw_commands.clear();
+        Ok(())
     }
 
     pub fn resize(&mut self, new_size: WindowSize) {
@@ -396,35 +206,14 @@ impl Renderer {
             return;
         }
 
-        self.size = winit::dpi::PhysicalSize::new(new_size.width, new_size.height);
-        self.surface_configuration.width = new_size.width;
-        self.surface_configuration.height = new_size.height;
-        self.surface
-            .configure(&self.device, &self.surface_configuration);
-    }
-
-    fn create_material_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
-        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("material_bind_group_layout"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-            ],
-        })
+        self.rendering_context.size =
+            winit::dpi::PhysicalSize::new(new_size.width, new_size.height);
+        self.rendering_context.surface_configuration.width = new_size.width;
+        self.rendering_context.surface_configuration.height = new_size.height;
+        self.rendering_context.surface.configure(
+            &self.rendering_context.device,
+            &self.rendering_context.surface_configuration,
+        );
     }
 }
 
@@ -442,40 +231,18 @@ pub struct MeshUniform {
     _padding: [u64; 24],
 }
 
-pub struct RenderingContext<'a> {
-    command_encoder: &'a mut wgpu::CommandEncoder,
-    pipelines: &'a mut HashMap<String, wgpu::RenderPipeline>,
-    draw_commands: &'a Vec<DrawCommand>,
-    device: &'a wgpu::Device,
-    vertex_buffers: &'a Vec<wgpu::Buffer>,
-    index_buffers: &'a Vec<wgpu::Buffer>,
-    surface_configuration: &'a wgpu::SurfaceConfiguration,
-    material_cache: &'a MaterialCache,
-    shader_modules: &'a HashMap<String, wgpu::ShaderModule>,
-    camera_bind_group_layout: &'a wgpu::BindGroupLayout,
-    camera_bind_group: &'a wgpu::BindGroup,
-    mesh_bind_group_layout: &'a wgpu::BindGroupLayout,
-    mesh_bind_group: &'a wgpu::BindGroup,
-    material_bind_group_layout: &'a wgpu::BindGroupLayout,
-}
-
-impl<'a> RenderingContext<'a> {
-    pub fn new(encoder: &'a mut wgpu::CommandEncoder, renderer: &'a mut Renderer) -> Self {
-        Self {
-            command_encoder: encoder,
-            pipelines: &mut renderer.pipelines,
-            draw_commands: &renderer.draw_commands,
-            device: &renderer.device,
-            vertex_buffers: &renderer.vertex_buffers,
-            index_buffers: &renderer.index_buffers,
-            surface_configuration: &renderer.surface_configuration,
-            shader_modules: &renderer.shader_modules,
-            camera_bind_group_layout: &renderer.camera_bind_group_layout,
-            camera_bind_group: &renderer.camera_bind_group,
-            mesh_bind_group_layout: &renderer.mesh_bind_group_layout,
-            mesh_bind_group: &renderer.mesh_bind_group,
-            material_bind_group_layout: &renderer.material_bind_group_layout,
-            material_cache: &renderer.material_cache,
-        }
-    }
+pub struct RenderingContext {
+    pub(crate) size: PhysicalSize<u32>,
+    pub(crate) surface: wgpu::Surface,
+    pub(crate) surface_configuration: wgpu::SurfaceConfiguration,
+    pub(crate) pipelines: HashMap<String, wgpu::RenderPipeline>,
+    pub(crate) shader_modules: HashMap<String, wgpu::ShaderModule>,
+    pub(crate) device: wgpu::Device,
+    pub(crate) queue: wgpu::Queue,
+    pub(crate) draw_commands: Vec<DrawCommand>,
+    pub(crate) vertex_buffers: Vec<wgpu::Buffer>,
+    pub(crate) index_buffers: Vec<wgpu::Buffer>,
+    pub(crate) texture_cache: TextureCache,
+    pub(crate) material_cache: MaterialCache,
+    pub(crate) model_cache: ModelCache,
 }

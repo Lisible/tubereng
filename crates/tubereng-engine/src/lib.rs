@@ -50,7 +50,7 @@ impl Engine {
                     .expect("AssetStore is not present in the resources"),
             )
             .unwrap();
-        renderer.render();
+        renderer.render().unwrap();
     }
 
     pub fn resize(&mut self, new_size: WindowSize) {

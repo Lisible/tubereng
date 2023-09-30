@@ -6,12 +6,12 @@ use crate::{geometry::Vertex, material::MaterialCache, DrawCommand, RenderingCon
 #[derive(Clone, Copy, Debug)]
 pub struct RenderTargetId(usize);
 
-pub struct RenderGraph {
-    render_passes: Vec<RenderPass>,
+pub struct RenderGraph<'layout> {
+    render_passes: Vec<RenderPass<'layout>>,
     render_targets: Vec<wgpu::TextureView>,
 }
 
-impl RenderGraph {
+impl<'layout> RenderGraph<'layout> {
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -28,47 +28,42 @@ impl RenderGraph {
         RenderTargetId(self.render_targets.len() - 1)
     }
 
-    pub fn execute(&mut self, ctx: &mut RenderingContext) {
+    pub fn execute(
+        &mut self,
+        command_encoder: &mut wgpu::CommandEncoder,
+        bind_groups: &[&wgpu::BindGroup],
+        ctx: &mut RenderingContext,
+    ) {
         for render_pass in &self.render_passes {
             let mut wgpu_render_pass =
-                ctx.command_encoder
-                    .begin_render_pass(&wgpu::RenderPassDescriptor {
-                        label: Some(render_pass.identifier),
-                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                            view: &self.render_targets[render_pass.render_targets[0].0],
-                            resolve_target: None,
-                            ops: wgpu::Operations {
-                                load: wgpu::LoadOp::Load,
-                                store: true,
-                            },
-                        })],
-                        depth_stencil_attachment: None,
-                    });
+                command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some(render_pass.identifier),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &self.render_targets[render_pass.render_targets[0].0],
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Load,
+                            store: true,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                });
 
             let pass_identifier = render_pass.identifier.to_string();
             if !ctx.pipelines.contains_key(&pass_identifier) {
                 debug!("Caching pipeline for pass {}", pass_identifier);
                 let pipeline = Self::create_pipeline_for_pass(
-                    ctx.surface_configuration,
+                    &ctx.surface_configuration,
                     render_pass,
-                    ctx.device,
-                    ctx.shader_modules,
-                    ctx.camera_bind_group_layout,
-                    ctx.mesh_bind_group_layout,
-                    ctx.material_bind_group_layout,
+                    &ctx.device,
+                    &ctx.shader_modules,
                 );
                 ctx.pipelines
                     .insert(render_pass.identifier.into(), pipeline);
             }
 
             wgpu_render_pass.set_pipeline(&ctx.pipelines[render_pass.identifier]);
-            wgpu_render_pass.set_bind_group(0, ctx.camera_bind_group, &[]);
-            for (i, draw_command) in ctx.draw_commands.iter().enumerate() {
-                wgpu_render_pass.set_bind_group(
-                    1,
-                    ctx.mesh_bind_group,
-                    &[u32::try_from(i * 256).expect("Bind group offset is overflowing u32")],
-                );
+            for (draw_command_index, draw_command) in ctx.draw_commands.iter().enumerate() {
                 wgpu_render_pass
                     .set_vertex_buffer(0, ctx.vertex_buffers[draw_command.vertex_buffer].slice(..));
 
@@ -79,7 +74,13 @@ impl RenderGraph {
                     );
                 }
 
-                (render_pass.dispatch_fn)(&mut wgpu_render_pass, draw_command, ctx.material_cache);
+                (render_pass.dispatch_fn)(
+                    &mut wgpu_render_pass,
+                    bind_groups,
+                    draw_command_index,
+                    draw_command,
+                    &ctx.material_cache,
+                );
             }
         }
     }
@@ -89,18 +90,11 @@ impl RenderGraph {
         render_pass: &RenderPass,
         device: &wgpu::Device,
         shader_modules: &HashMap<String, wgpu::ShaderModule>,
-        camera_bind_group_layout: &wgpu::BindGroupLayout,
-        mesh_bind_group_layout: &wgpu::BindGroupLayout,
-        material_bind_group_layout: &wgpu::BindGroupLayout,
     ) -> wgpu::RenderPipeline {
         let shader_module = &shader_modules[render_pass.shader_identifier];
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some(&format!("{}_pipeline_layout", render_pass.identifier)),
-            bind_group_layouts: &[
-                camera_bind_group_layout,
-                mesh_bind_group_layout,
-                material_bind_group_layout,
-            ],
+            bind_group_layouts: &render_pass.bind_group_layouts,
             push_constant_ranges: &[],
         });
 
@@ -141,48 +135,58 @@ impl RenderGraph {
     }
 }
 
-impl Default for RenderGraph {
+impl Default for RenderGraph<'_> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-type BoxedRenderPassDispatchFn =
-    Box<dyn for<'l> Fn(&mut wgpu::RenderPass<'l>, &DrawCommand, &'l MaterialCache)>;
-pub struct RenderPass {
+type BoxedRenderPassDispatchFn = Box<
+    dyn for<'l> Fn(
+        &mut wgpu::RenderPass<'l>,
+        &[&'l wgpu::BindGroup],
+        usize,
+        &DrawCommand,
+        &'l MaterialCache,
+    ),
+>;
+pub struct RenderPass<'layout> {
     identifier: &'static str,
     shader_identifier: &'static str,
     render_targets: Vec<RenderTargetId>,
     dispatch_fn: BoxedRenderPassDispatchFn,
     primitive_topology: wgpu::PrimitiveTopology,
+    bind_group_layouts: Vec<&'layout wgpu::BindGroupLayout>,
 }
 
-impl RenderPass {
+impl<'layout> RenderPass<'layout> {
     #[allow(clippy::new_ret_no_self)]
     pub fn new<'a>(
         render_pass_identifier: &'static str,
-        render_graph: &'a mut RenderGraph,
-    ) -> RenderPassBuilder<'a> {
+        render_graph: &'a mut RenderGraph<'layout>,
+    ) -> RenderPassBuilder<'a, 'layout> {
         RenderPassBuilder::new(render_pass_identifier, render_graph)
     }
 }
 
-pub struct RenderPassBuilder<'a> {
+pub struct RenderPassBuilder<'a, 'layout> {
     identifier: &'static str,
-    render_graph: &'a mut RenderGraph,
+    render_graph: &'a mut RenderGraph<'layout>,
     shader_identifier: Option<&'static str>,
     render_targets: Vec<RenderTargetId>,
     primitive_topology: wgpu::PrimitiveTopology,
+    bind_group_layouts: Vec<&'layout wgpu::BindGroupLayout>,
 }
 
-impl<'a> RenderPassBuilder<'a> {
-    pub fn new(identifier: &'static str, render_graph: &'a mut RenderGraph) -> Self {
+impl<'a, 'layout> RenderPassBuilder<'a, 'layout> {
+    pub fn new(identifier: &'static str, render_graph: &'a mut RenderGraph<'layout>) -> Self {
         Self {
             identifier,
             render_graph,
             shader_identifier: None,
             render_targets: vec![],
             primitive_topology: wgpu::PrimitiveTopology::TriangleList,
+            bind_group_layouts: vec![],
         }
     }
 
@@ -204,9 +208,25 @@ impl<'a> RenderPassBuilder<'a> {
         self
     }
 
+    #[must_use]
+    pub fn with_bind_group_layout(
+        mut self,
+        bind_group_layout: &'layout wgpu::BindGroupLayout,
+    ) -> Self {
+        self.bind_group_layouts.push(bind_group_layout);
+        self
+    }
+
     pub fn dispatch<F>(self, dispatch_fn: F)
     where
-        F: 'static + for<'l> Fn(&mut wgpu::RenderPass<'l>, &DrawCommand, &'l MaterialCache),
+        F: 'static
+            + for<'l> Fn(
+                &mut wgpu::RenderPass<'l>,
+                &[&'l wgpu::BindGroup],
+                usize,
+                &DrawCommand,
+                &'l MaterialCache,
+            ),
     {
         self.render_graph.render_passes.push(RenderPass {
             identifier: self.identifier,
@@ -214,6 +234,7 @@ impl<'a> RenderPassBuilder<'a> {
             render_targets: self.render_targets,
             primitive_topology: self.primitive_topology,
             dispatch_fn: Box::new(dispatch_fn),
+            bind_group_layouts: self.bind_group_layouts,
         });
     }
 }
