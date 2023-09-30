@@ -1,43 +1,20 @@
 use crate::{
+    camera::{ActiveCamera, Camera, OPENGL_TO_WGPU_MATRIX},
+    geometry::ModelAsset,
+    material::MaterialAsset,
     render_graph::{RenderGraph, RenderPass},
-    RenderingContext, Result,
+    DrawCommand, Result,
 };
 use std::collections::HashMap;
+
 use tubereng_assets::{AssetHandle, AssetStore};
 use tubereng_core::Transform;
 use tubereng_ecs::{entity::EntityStore, query::Q};
 use wgpu::util::DeviceExt;
 
-use crate::{
-    camera::{ActiveCamera, Camera, CameraUniform, OPENGL_TO_WGPU_MATRIX},
-    geometry::ModelAsset,
-    material::MaterialAsset,
-    DrawCommand, MeshUniform,
-};
+use crate::{camera::CameraUniform, MeshUniform, RenderingContext};
 
-pub trait RenderPipeline {
-    fn new(device: &wgpu::Device, shader_modules: &mut HashMap<String, wgpu::ShaderModule>)
-        -> Self;
-    /// Prepares the render
-    /// # Errors
-    /// Returns an error if the preparation fails
-    fn prepare(
-        &mut self,
-        rendering_context: &mut RenderingContext,
-        entity_store: &EntityStore,
-        asset_store: &mut AssetStore,
-    ) -> Result<()>;
-
-    /// Renders
-    /// # Errors
-    /// Returns an error if the render fails
-    fn render(
-        &mut self,
-        command_encoder: &mut wgpu::CommandEncoder,
-        view: wgpu::TextureView,
-        rendering_context: &mut RenderingContext,
-    ) -> Result<()>;
-}
+use super::RenderPipeline;
 
 pub struct DefaultRenderPipeline {
     material_bind_group_layout: wgpu::BindGroupLayout,
@@ -49,8 +26,6 @@ pub struct DefaultRenderPipeline {
     camera_bind_group_layout: wgpu::BindGroupLayout,
     camera_bind_group: wgpu::BindGroup,
 
-    gradient_uniform: GradientUniform,
-    gradient_uniform_buffer: wgpu::Buffer,
     gradient_uniform_bind_group_layout: wgpu::BindGroupLayout,
     gradient_uniform_bind_group: wgpu::BindGroup,
 }
@@ -240,8 +215,6 @@ impl RenderPipeline for DefaultRenderPipeline {
             camera_buffer,
             camera_bind_group_layout,
             camera_bind_group,
-            gradient_uniform,
-            gradient_uniform_buffer,
             gradient_uniform_bind_group_layout,
             gradient_uniform_bind_group,
         }
@@ -343,10 +316,10 @@ impl RenderPipeline for DefaultRenderPipeline {
             .dispatch(
                 |rpass,
                  bind_groups,
-                 draw_commands,
-                 material_cache,
-                 vertex_buffers,
-                 index_buffers| {
+                 _draw_commands,
+                 _material_cache,
+                 _vertex_buffers,
+                 _index_buffers| {
                     rpass.set_bind_group(0, bind_groups[0], &[]);
                     rpass.draw(0..3, 0..1);
                 },
@@ -374,7 +347,7 @@ impl RenderPipeline for DefaultRenderPipeline {
                             rpass.set_index_buffer(
                                 index_buffers[index_buffer].slice(..),
                                 wgpu::IndexFormat::Uint16,
-                            )
+                            );
                         }
 
                         rpass.set_bind_group(0, bind_groups[0], &[]);

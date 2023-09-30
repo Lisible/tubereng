@@ -3,7 +3,7 @@
 
 use geometry::ModelCache;
 use material::{MaterialAsset, MaterialCache};
-use pipeline::{DefaultRenderPipeline, RenderPipeline};
+use pipeline::{default_pipeline::DefaultRenderPipeline, RenderPipeline};
 use std::{collections::HashMap, future::Future};
 use texture::TextureCache;
 use tubereng_assets::{AssetHandle, AssetStore};
