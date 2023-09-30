@@ -1,7 +1,10 @@
 use log::debug;
 use std::collections::HashMap;
 
-use crate::{geometry::Vertex, material::MaterialCache, DrawCommand, RenderingContext};
+use crate::{
+    geometry::Vertex, material::MaterialCache, texture::DepthBufferTextureHandle, DrawCommand,
+    RenderingContext,
+};
 
 #[derive(Clone, Copy, Debug)]
 pub struct RenderTargetId(usize);
@@ -34,6 +37,24 @@ impl<'layout> RenderGraph<'layout> {
         ctx: &mut RenderingContext,
     ) {
         for render_pass in &self.render_passes {
+            let depth_stencil_attachment = if let Some(depth_buffer_texture_handle) =
+                render_pass.depth_buffer_texture_handle
+            {
+                let depth_buffer_texture = ctx
+                    .texture_cache
+                    .depth_buffer_texture(depth_buffer_texture_handle);
+                Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &depth_buffer_texture.view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: true,
+                    }),
+                    stencil_ops: None,
+                })
+            } else {
+                None
+            };
+
             let mut wgpu_render_pass =
                 command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some(render_pass.identifier),
@@ -45,7 +66,7 @@ impl<'layout> RenderGraph<'layout> {
                             store: true,
                         },
                     })],
-                    depth_stencil_attachment: None,
+                    depth_stencil_attachment,
                 });
 
             let pass_identifier = render_pass.identifier.to_string();
@@ -92,6 +113,18 @@ impl<'layout> RenderGraph<'layout> {
             vec![]
         };
 
+        let depth_stencil = if render_pass.depth_buffer_texture_handle.is_some() {
+            Some(wgpu::DepthStencilState {
+                format: wgpu::TextureFormat::Depth32Float,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::Less,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            })
+        } else {
+            None
+        };
+
         device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some(&format!("{}_pipeline", render_pass.identifier)),
             layout: Some(&pipeline_layout),
@@ -109,7 +142,7 @@ impl<'layout> RenderGraph<'layout> {
                 polygon_mode: wgpu::PolygonMode::Fill,
                 conservative: false,
             },
-            depth_stencil: None,
+            depth_stencil,
             multisample: wgpu::MultisampleState {
                 count: 1,
                 mask: !0,
@@ -153,6 +186,7 @@ pub struct RenderPass<'layout> {
     primitive_topology: wgpu::PrimitiveTopology,
     bind_group_layouts: Vec<&'layout wgpu::BindGroupLayout>,
     bind_groups: Vec<&'layout wgpu::BindGroup>,
+    depth_buffer_texture_handle: Option<DepthBufferTextureHandle>,
     has_vertex_buffer: bool,
 }
 
@@ -175,6 +209,7 @@ pub struct RenderPassBuilder<'a, 'layout> {
     bind_group_layouts: Vec<&'layout wgpu::BindGroupLayout>,
     bind_groups: Vec<&'layout wgpu::BindGroup>,
     has_vertex_buffer: bool,
+    depth_buffer_texture_handle: Option<DepthBufferTextureHandle>,
 }
 
 impl<'a, 'layout> RenderPassBuilder<'a, 'layout> {
@@ -188,12 +223,22 @@ impl<'a, 'layout> RenderPassBuilder<'a, 'layout> {
             bind_group_layouts: vec![],
             bind_groups: vec![],
             has_vertex_buffer: true,
+            depth_buffer_texture_handle: None,
         }
     }
 
     #[must_use]
     pub fn with_shader(mut self, shader_identifier: &'static str) -> Self {
         self.shader_identifier = Some(shader_identifier);
+        self
+    }
+
+    #[must_use]
+    pub fn with_depth_buffer(
+        mut self,
+        depth_buffer_texture_handle: DepthBufferTextureHandle,
+    ) -> Self {
+        self.depth_buffer_texture_handle = Some(depth_buffer_texture_handle);
         self
     }
 
@@ -255,6 +300,7 @@ impl<'a, 'layout> RenderPassBuilder<'a, 'layout> {
             dispatch_fn: Box::new(dispatch_fn),
             bind_group_layouts: self.bind_group_layouts,
             bind_groups: self.bind_groups,
+            depth_buffer_texture_handle: self.depth_buffer_texture_handle,
             has_vertex_buffer: self.has_vertex_buffer,
         });
     }

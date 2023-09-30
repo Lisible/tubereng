@@ -3,6 +3,7 @@ use crate::{
     geometry::ModelAsset,
     material::MaterialAsset,
     render_graph::{RenderGraph, RenderPass},
+    texture::{DepthBufferTextureHandle, TextureCache},
     DrawCommand, Result,
 };
 use std::collections::HashMap;
@@ -28,6 +29,7 @@ pub struct DefaultRenderPipeline {
 
     gradient_uniform_bind_group_layout: wgpu::BindGroupLayout,
     gradient_uniform_bind_group: wgpu::BindGroup,
+    depth_buffer_texture_handle: DepthBufferTextureHandle,
 }
 
 impl DefaultRenderPipeline {
@@ -159,6 +161,8 @@ impl DefaultRenderPipeline {
 impl RenderPipeline for DefaultRenderPipeline {
     fn new(
         device: &wgpu::Device,
+        surface_configuration: &wgpu::SurfaceConfiguration,
+        texture_cache: &mut TextureCache,
         shader_modules: &mut HashMap<String, wgpu::ShaderModule>,
     ) -> Self {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -206,6 +210,13 @@ impl RenderPipeline for DefaultRenderPipeline {
         let (gradient_uniform_bind_group_layout, gradient_uniform_bind_group) =
             Self::create_gradient_uniform_bind_group(device, &gradient_uniform_buffer);
 
+        let depth_texture_handle = texture_cache.create_depth_texture(
+            device,
+            "depth_buffer",
+            surface_configuration.width,
+            surface_configuration.height,
+        );
+
         Self {
             material_bind_group_layout,
             mesh_uniform_buffer,
@@ -217,6 +228,7 @@ impl RenderPipeline for DefaultRenderPipeline {
             camera_bind_group,
             gradient_uniform_bind_group_layout,
             gradient_uniform_bind_group,
+            depth_buffer_texture_handle: depth_texture_handle,
         }
     }
 
@@ -330,6 +342,7 @@ impl RenderPipeline for DefaultRenderPipeline {
 
         RenderPass::new("render_pass", &mut render_graph)
             .with_shader("shader")
+            .with_depth_buffer(self.depth_buffer_texture_handle)
             .with_render_target(render_target)
             .with_bind_group(&self.camera_bind_group_layout, &self.camera_bind_group)
             .with_bind_group(&self.mesh_bind_group_layout, &self.mesh_bind_group)

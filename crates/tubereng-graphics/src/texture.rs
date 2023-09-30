@@ -30,8 +30,17 @@ impl AssetLoader<TextureAsset> for TextureLoader {
 
 const MAX_TEXTURE_COUNT: usize = 4096;
 
+#[derive(Debug, Copy, Clone)]
+pub struct DepthBufferTextureHandle(usize);
+pub struct DepthBufferTexture {
+    pub(crate) texture: wgpu::Texture,
+    pub(crate) view: wgpu::TextureView,
+    pub(crate) sampler: wgpu::Sampler,
+}
+
 pub struct TextureCache {
     textures: Vec<Option<wgpu::Texture>>,
+    depth_buffer_textures: Vec<DepthBufferTexture>,
 }
 
 impl TextureCache {
@@ -39,7 +48,11 @@ impl TextureCache {
     pub fn new() -> Self {
         let mut textures = vec![];
         textures.resize_with(MAX_TEXTURE_COUNT, || None);
-        Self { textures }
+
+        Self {
+            textures,
+            depth_buffer_textures: vec![],
+        }
     }
 
     #[must_use]
@@ -50,6 +63,55 @@ impl TextureCache {
     #[must_use]
     pub fn get(&self, handle: AssetHandle<TextureAsset>) -> Option<&wgpu::Texture> {
         self.textures[handle.id()].as_ref()
+    }
+
+    pub fn create_depth_texture(
+        &mut self,
+        device: &wgpu::Device,
+        label: &str,
+        width: u32,
+        height: u32,
+    ) -> DepthBufferTextureHandle {
+        let size = wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        };
+
+        let texture_label = format!("{label}_texture");
+        let texture_descriptor = wgpu::TextureDescriptor {
+            label: Some(&texture_label),
+            size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Depth32Float,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        };
+
+        let texture = device.create_texture(&texture_descriptor);
+
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            compare: Some(wgpu::CompareFunction::LessEqual),
+            lod_min_clamp: 0.0,
+            lod_max_clamp: 100.0,
+            ..Default::default()
+        });
+
+        self.depth_buffer_textures.push(DepthBufferTexture {
+            texture,
+            view,
+            sampler,
+        });
+        DepthBufferTextureHandle(self.depth_buffer_textures.len() - 1)
     }
 
     pub fn load_to_vram(
@@ -96,6 +158,13 @@ impl TextureCache {
         self.textures[handle.id()] = Some(texture);
         // SAFETY: We just assigned this texture so it is present
         unsafe { self.textures[handle.id()].as_ref().unwrap_unchecked() }
+    }
+
+    pub(crate) fn depth_buffer_texture(
+        &self,
+        depth_buffer_texture_handle: DepthBufferTextureHandle,
+    ) -> &DepthBufferTexture {
+        &self.depth_buffer_textures[depth_buffer_texture_handle.0]
     }
 }
 

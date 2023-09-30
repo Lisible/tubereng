@@ -93,7 +93,13 @@ where
         let index_buffers = vec![];
         let material_cache = MaterialCache::new(&device);
 
-        let pipeline = R::new(&device, &mut shader_modules);
+        let mut texture_cache = TextureCache::new();
+        let pipeline = R::new(
+            &device,
+            &surface_configuration,
+            &mut texture_cache,
+            &mut shader_modules,
+        );
 
         let rendering_context = RenderingContext {
             device,
@@ -101,7 +107,7 @@ where
             draw_commands: vec![],
             vertex_buffers,
             index_buffers,
-            texture_cache: TextureCache::new(),
+            texture_cache,
             material_cache,
             model_cache: ModelCache::new(),
             size,
