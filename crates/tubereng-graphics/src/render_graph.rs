@@ -31,10 +31,9 @@ impl<'layout> RenderGraph<'layout> {
     pub fn execute(
         &mut self,
         command_encoder: &mut wgpu::CommandEncoder,
-        bind_groups: &[&[&wgpu::BindGroup]],
         ctx: &mut RenderingContext,
     ) {
-        for (render_pass_index, render_pass) in self.render_passes.iter().enumerate() {
+        for render_pass in &self.render_passes {
             let mut wgpu_render_pass =
                 command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some(render_pass.identifier),
@@ -65,7 +64,7 @@ impl<'layout> RenderGraph<'layout> {
             wgpu_render_pass.set_pipeline(&ctx.pipelines[render_pass.identifier]);
             (render_pass.dispatch_fn)(
                 &mut wgpu_render_pass,
-                bind_groups[render_pass_index],
+                &render_pass.bind_groups,
                 &ctx.vertex_buffers,
                 &ctx.index_buffers,
                 &ctx.draw_commands,
@@ -153,6 +152,7 @@ pub struct RenderPass<'layout> {
     dispatch_fn: BoxedRenderPassDispatchFn,
     primitive_topology: wgpu::PrimitiveTopology,
     bind_group_layouts: Vec<&'layout wgpu::BindGroupLayout>,
+    bind_groups: Vec<&'layout wgpu::BindGroup>,
     has_vertex_buffer: bool,
 }
 
@@ -173,6 +173,7 @@ pub struct RenderPassBuilder<'a, 'layout> {
     render_targets: Vec<RenderTargetId>,
     primitive_topology: wgpu::PrimitiveTopology,
     bind_group_layouts: Vec<&'layout wgpu::BindGroupLayout>,
+    bind_groups: Vec<&'layout wgpu::BindGroup>,
     has_vertex_buffer: bool,
 }
 
@@ -185,6 +186,7 @@ impl<'a, 'layout> RenderPassBuilder<'a, 'layout> {
             render_targets: vec![],
             primitive_topology: wgpu::PrimitiveTopology::TriangleList,
             bind_group_layouts: vec![],
+            bind_groups: vec![],
             has_vertex_buffer: true,
         }
     }
@@ -222,6 +224,17 @@ impl<'a, 'layout> RenderPassBuilder<'a, 'layout> {
         self
     }
 
+    #[must_use]
+    pub fn with_bind_group(
+        mut self,
+        bind_group_layout: &'layout wgpu::BindGroupLayout,
+        bind_group: &'layout wgpu::BindGroup,
+    ) -> Self {
+        self.bind_group_layouts.push(bind_group_layout);
+        self.bind_groups.push(bind_group);
+        self
+    }
+
     pub fn dispatch<F>(self, dispatch_fn: F)
     where
         F: 'static
@@ -241,6 +254,7 @@ impl<'a, 'layout> RenderPassBuilder<'a, 'layout> {
             primitive_topology: self.primitive_topology,
             dispatch_fn: Box::new(dispatch_fn),
             bind_group_layouts: self.bind_group_layouts,
+            bind_groups: self.bind_groups,
             has_vertex_buffer: self.has_vertex_buffer,
         });
     }

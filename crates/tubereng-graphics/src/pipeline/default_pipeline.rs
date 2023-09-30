@@ -312,7 +312,10 @@ impl RenderPipeline for DefaultRenderPipeline {
             .with_no_vertex_buffer()
             .with_shader("gradient_sky")
             .with_render_target(render_target)
-            .with_bind_group_layout(&self.gradient_uniform_bind_group_layout)
+            .with_bind_group(
+                &self.gradient_uniform_bind_group_layout,
+                &self.gradient_uniform_bind_group,
+            )
             .dispatch(
                 |rpass,
                  bind_groups,
@@ -328,8 +331,8 @@ impl RenderPipeline for DefaultRenderPipeline {
         RenderPass::new("render_pass", &mut render_graph)
             .with_shader("shader")
             .with_render_target(render_target)
-            .with_bind_group_layout(&self.camera_bind_group_layout)
-            .with_bind_group_layout(&self.mesh_bind_group_layout)
+            .with_bind_group(&self.camera_bind_group_layout, &self.camera_bind_group)
+            .with_bind_group(&self.mesh_bind_group_layout, &self.mesh_bind_group)
             .with_bind_group_layout(&self.material_bind_group_layout)
             .dispatch(
                 |rpass,
@@ -369,14 +372,7 @@ impl RenderPipeline for DefaultRenderPipeline {
                 },
             );
 
-        render_graph.execute(
-            command_encoder,
-            &[
-                &[&self.gradient_uniform_bind_group],
-                &[&self.camera_bind_group, &self.mesh_bind_group],
-            ],
-            ctx,
-        );
+        render_graph.execute(command_encoder, ctx);
 
         Ok(())
     }
