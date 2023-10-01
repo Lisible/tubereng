@@ -11,6 +11,7 @@ use std::collections::HashMap;
 use tubereng_assets::{AssetHandle, AssetStore};
 use tubereng_core::Transform;
 use tubereng_ecs::{entity::EntityStore, query::Q};
+use tubereng_math::matrix::{Identity, Matrix4f};
 use wgpu::util::DeviceExt;
 
 use crate::{camera::CameraUniform, MeshUniform, RenderingContext};
@@ -26,6 +27,10 @@ pub struct DefaultRenderPipeline {
     camera_buffer: wgpu::Buffer,
     camera_bind_group_layout: wgpu::BindGroupLayout,
     camera_bind_group: wgpu::BindGroup,
+    inverse_camera_uniform: InverseCameraUniform,
+    inverse_camera_buffer: wgpu::Buffer,
+    inverse_camera_bind_group_layout: wgpu::BindGroupLayout,
+    inverse_camera_bind_group: wgpu::BindGroup,
 
     gradient_uniform_bind_group_layout: wgpu::BindGroupLayout,
     gradient_uniform_bind_group: wgpu::BindGroup,
@@ -81,7 +86,7 @@ impl DefaultRenderPipeline {
                 label: Some("camera_bind_group_layout"),
                 entries: &[wgpu::BindGroupLayoutEntry {
                     binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
+                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: false,
@@ -101,6 +106,34 @@ impl DefaultRenderPipeline {
         (camera_bind_group_layout, camera_bind_group)
     }
 
+    fn create_inverse_camera_bind_group(
+        device: &wgpu::Device,
+        inverse_camera_buffer: &wgpu::Buffer,
+    ) -> (wgpu::BindGroupLayout, wgpu::BindGroup) {
+        let inverse_camera_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("inverse_camera_bind_group_layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            });
+        let inverse_camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("inverse_camera_bind_group"),
+            layout: &inverse_camera_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: inverse_camera_buffer.as_entire_binding(),
+            }],
+        });
+        (inverse_camera_bind_group_layout, inverse_camera_bind_group)
+    }
     fn create_material_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
         device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("material_bind_group_layout"),
@@ -175,6 +208,11 @@ impl RenderPipeline for DefaultRenderPipeline {
             source: wgpu::ShaderSource::Wgsl(include_str!("gradient_sky.wgsl").into()),
         });
         shader_modules.insert("gradient_sky".into(), shader);
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Debug grid shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("debug_grid.wgsl").into()),
+        });
+        shader_modules.insert("debug_grid".into(), shader);
 
         let camera_uniform = CameraUniform::new();
         let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -184,6 +222,17 @@ impl RenderPipeline for DefaultRenderPipeline {
         });
         let (camera_bind_group_layout, camera_bind_group) =
             Self::create_camera_bind_group(device, &camera_buffer);
+
+        let inverse_camera_uniform = InverseCameraUniform {
+            view_projection_inverse: Matrix4f::identity().into(),
+        };
+        let inverse_camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("view_projection_inverse"),
+            contents: bytemuck::cast_slice(&[inverse_camera_uniform]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+        let (inverse_camera_bind_group_layout, inverse_camera_bind_group) =
+            Self::create_inverse_camera_bind_group(device, &inverse_camera_buffer);
 
         let mesh_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("mesh_uniform_buffer"),
@@ -230,6 +279,10 @@ impl RenderPipeline for DefaultRenderPipeline {
             gradient_uniform_bind_group_layout,
             gradient_uniform_bind_group,
             depth_buffer_texture_handle: depth_texture_handle,
+            inverse_camera_uniform,
+            inverse_camera_buffer,
+            inverse_camera_bind_group_layout,
+            inverse_camera_bind_group,
         }
     }
 
@@ -241,18 +294,26 @@ impl RenderPipeline for DefaultRenderPipeline {
     ) -> Result<()> {
         let camera_query = Q::<(&ActiveCamera, &Camera, &Transform)>::new(entity_store);
         let (_, camera, camera_transform) = camera_query.iter().next().expect("Camera not found");
-        self.camera_uniform.set_view_projection_matrix(
-            OPENGL_TO_WGPU_MATRIX
-                * *camera.projection_matrix()
-                * camera_transform
-                    .as_matrix4()
-                    .try_inverse()
-                    .expect("No inverse for camera transform matrix"),
-        );
+        let camera_view_projection_matrix = OPENGL_TO_WGPU_MATRIX
+            * *camera.projection_matrix()
+            * camera_transform
+                .as_matrix4()
+                .try_inverse()
+                .expect("No inverse for camera transform matrix");
+        self.camera_uniform
+            .set_view_projection_matrix(camera_view_projection_matrix);
         ctx.queue.write_buffer(
             &self.camera_buffer,
             0,
             bytemuck::cast_slice(&[self.camera_uniform]),
+        );
+
+        self.inverse_camera_uniform.view_projection_inverse =
+            camera_view_projection_matrix.try_inverse().unwrap().into();
+        ctx.queue.write_buffer(
+            &self.inverse_camera_buffer,
+            0,
+            bytemuck::cast_slice(&[self.inverse_camera_uniform]),
         );
 
         for (i, (model, material, transform)) in Q::<(
@@ -343,7 +404,7 @@ impl RenderPipeline for DefaultRenderPipeline {
 
         RenderPass::new("render_pass", &mut render_graph)
             .with_shader("shader")
-            .with_depth_buffer(self.depth_buffer_texture_handle)
+            .with_depth_buffer(self.depth_buffer_texture_handle, true)
             .with_render_target(render_target)
             .with_bind_group(&self.camera_bind_group_layout, &self.camera_bind_group)
             .with_bind_group(&self.mesh_bind_group_layout, &self.mesh_bind_group)
@@ -386,6 +447,37 @@ impl RenderPipeline for DefaultRenderPipeline {
                 },
             );
 
+        RenderPass::new("debug_grid", &mut render_graph)
+            .with_no_vertex_buffer()
+            .with_depth_buffer(self.depth_buffer_texture_handle, false)
+            .with_blend_state(wgpu::BlendState {
+                color: wgpu::BlendComponent {
+                    src_factor: wgpu::BlendFactor::SrcAlpha,
+                    dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                    operation: wgpu::BlendOperation::Add,
+                },
+                alpha: wgpu::BlendComponent::default(),
+            })
+            .with_shader("debug_grid")
+            .with_render_target(render_target)
+            .with_bind_group(&self.camera_bind_group_layout, &self.camera_bind_group)
+            .with_bind_group(
+                &self.inverse_camera_bind_group_layout,
+                &self.inverse_camera_bind_group,
+            )
+            .dispatch(
+                |rpass,
+                 bind_groups,
+                 _vertex_buffers,
+                 _index_buffers,
+                 _draw_commands,
+                 _material_cache| {
+                    rpass.set_bind_group(0, bind_groups[0], &[]);
+                    rpass.set_bind_group(1, bind_groups[1], &[]);
+                    rpass.draw(0..6, 0..1);
+                },
+            );
+
         render_graph.execute(command_encoder, ctx);
 
         Ok(())
@@ -397,4 +489,10 @@ impl RenderPipeline for DefaultRenderPipeline {
 struct GradientUniform {
     top_color: [f32; 4],
     bottom_color: [f32; 4],
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct InverseCameraUniform {
+    view_projection_inverse: [[f32; 4]; 4],
 }

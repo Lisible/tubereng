@@ -67,8 +67,6 @@ impl CameraUniform {
 
 impl Default for CameraUniform {
     fn default() -> Self {
-        Self {
-            view_projection_matrix: Matrix4f::identity().into(),
-        }
+        Self::new()
     }
 }

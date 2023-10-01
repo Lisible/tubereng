@@ -40,13 +40,18 @@ impl<'layout> RenderGraph<'layout> {
             let depth_stencil_attachment = if let Some(depth_buffer_texture_handle) =
                 render_pass.depth_buffer_texture_handle
             {
+                let load_op = if render_pass.clear_depth_buffer_texture {
+                    wgpu::LoadOp::Clear(1.0)
+                } else {
+                    wgpu::LoadOp::Load
+                };
                 let depth_buffer_texture = ctx
                     .texture_cache
                     .depth_buffer_texture(depth_buffer_texture_handle);
                 Some(wgpu::RenderPassDepthStencilAttachment {
                     view: &depth_buffer_texture.view,
                     depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(1.0),
+                        load: load_op,
                         store: true,
                     }),
                     stencil_ops: None,
@@ -125,6 +130,8 @@ impl<'layout> RenderGraph<'layout> {
             None
         };
 
+        let blend_state = render_pass.blend_state.unwrap_or(wgpu::BlendState::REPLACE);
+
         device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some(&format!("{}_pipeline", render_pass.identifier)),
             layout: Some(&pipeline_layout),
@@ -153,7 +160,7 @@ impl<'layout> RenderGraph<'layout> {
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
                     format: surface_configuration.format,
-                    blend: Some(wgpu::BlendState::REPLACE),
+                    blend: Some(blend_state),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
             }),
@@ -187,7 +194,9 @@ pub struct RenderPass<'layout> {
     bind_group_layouts: Vec<&'layout wgpu::BindGroupLayout>,
     bind_groups: Vec<&'layout wgpu::BindGroup>,
     depth_buffer_texture_handle: Option<DepthBufferTextureHandle>,
+    clear_depth_buffer_texture: bool,
     has_vertex_buffer: bool,
+    blend_state: Option<wgpu::BlendState>,
 }
 
 impl<'layout> RenderPass<'layout> {
@@ -210,6 +219,8 @@ pub struct RenderPassBuilder<'a, 'layout> {
     bind_groups: Vec<&'layout wgpu::BindGroup>,
     has_vertex_buffer: bool,
     depth_buffer_texture_handle: Option<DepthBufferTextureHandle>,
+    clear_depth_buffer_texture: bool,
+    blend_state: Option<wgpu::BlendState>,
 }
 
 impl<'a, 'layout> RenderPassBuilder<'a, 'layout> {
@@ -224,6 +235,8 @@ impl<'a, 'layout> RenderPassBuilder<'a, 'layout> {
             bind_groups: vec![],
             has_vertex_buffer: true,
             depth_buffer_texture_handle: None,
+            clear_depth_buffer_texture: true,
+            blend_state: None,
         }
     }
 
@@ -237,8 +250,10 @@ impl<'a, 'layout> RenderPassBuilder<'a, 'layout> {
     pub fn with_depth_buffer(
         mut self,
         depth_buffer_texture_handle: DepthBufferTextureHandle,
+        clear_depth_buffer_texture: bool,
     ) -> Self {
         self.depth_buffer_texture_handle = Some(depth_buffer_texture_handle);
+        self.clear_depth_buffer_texture = clear_depth_buffer_texture;
         self
     }
 
@@ -251,6 +266,12 @@ impl<'a, 'layout> RenderPassBuilder<'a, 'layout> {
     #[must_use]
     pub fn with_primitive_topology(mut self, primitive_topology: wgpu::PrimitiveTopology) -> Self {
         self.primitive_topology = primitive_topology;
+        self
+    }
+
+    #[must_use]
+    pub fn with_blend_state(mut self, blend_state: wgpu::BlendState) -> Self {
+        self.blend_state = Some(blend_state);
         self
     }
 
@@ -301,7 +322,9 @@ impl<'a, 'layout> RenderPassBuilder<'a, 'layout> {
             bind_group_layouts: self.bind_group_layouts,
             bind_groups: self.bind_groups,
             depth_buffer_texture_handle: self.depth_buffer_texture_handle,
+            clear_depth_buffer_texture: self.clear_depth_buffer_texture,
             has_vertex_buffer: self.has_vertex_buffer,
+            blend_state: self.blend_state,
         });
     }
 }

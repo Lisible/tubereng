@@ -31,7 +31,8 @@ fn setup(command_buffer: &CommandBuffer, asset_store: ResMut<AssetStore>) {
         ActiveCamera,
         Camera::new_perspective(45.0, 800.0 / 600.0, 0.1, 100.0),
         Transform {
-            translation: Vector3f::new(0.0, 0.0, 5.0),
+            translation: Vector3f::new(0.0, 1.0, 0.0),
+            rotation: Quaternion::from_axis_angle(&Vector3f::new(1.0, 0.0, 0.0), -PI / 6.0),
             ..Default::default()
         },
     ));
@@ -42,41 +43,21 @@ fn setup(command_buffer: &CommandBuffer, asset_store: ResMut<AssetStore>) {
     let cone_model = asset_store.load::<ModelAsset>("cone.obj").unwrap();
     let cube_model = asset_store.load::<ModelAsset>("cube.obj").unwrap();
 
-    command_buffer.insert((
-        cone_model,
-        material,
-        Transform {
-            translation: Vector3f::new(0.0, 0.0, 0.0),
-            scale: Vector3f::new(0.5, 0.5, 0.5),
-            rotation: Quaternion::from_axis_angle(&Vector3f::new(0.0, 1.0, 0.0), PI / 6.0),
-        },
-    ));
-    command_buffer.insert((
-        cone_model,
-        material2,
-        Transform {
-            translation: Vector3f::new(0.0, 0.0, 0.0),
-            scale: Vector3f::new(0.5, 0.5, 0.5),
-            rotation: Quaternion::from_axis_angle(&Vector3f::new(0.0, 1.0, 0.0), PI / 6.0),
-        },
-    ));
+    // command_buffer.insert((
+    //     cone_model,
+    //     material,
+    //     Transform {
+    //         translation: Vector3f::new(0.0, 0.0, -5.0),
+    //         ..Default::default()
+    //     },
+    // ));
 
-    command_buffer.insert((
-        cube_model,
-        material,
-        Transform {
-            translation: Vector3f::new(2.0, 0.0, 0.0),
-            scale: Vector3f::new(0.5, 0.5, 0.5),
-            rotation: Quaternion::from_axis_angle(&Vector3f::new(0.0, 1.0, 0.0), PI / 6.0),
-        },
-    ));
-
-    command_buffer.register_system(rotate_models);
+    command_buffer.register_system(rotate_camera);
 }
 
-fn rotate_models(cube_query: Q<(&AssetHandle<ModelAsset>, &mut Transform)>) {
-    for (_, mut transform) in cube_query.iter() {
-        transform.rotation = transform.rotation.clone()
-            * Quaternion::from_axis_angle(&Vector3f::new(0.0, 1.0, 0.5), 0.01);
+fn rotate_camera(camera_query: Q<(&Camera, &mut Transform)>) {
+    for (_, mut transform) in camera_query.iter() {
+        transform.translation.z -= 0.01;
+        transform.translation.y -= 0.01;
     }
 }

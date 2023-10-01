@@ -3,7 +3,7 @@ struct MeshUniform {
 }
 
 struct CameraUniform {
-    view_projection: mat4x4<f32>,
+    view_projection_matrix: mat4x4<f32>,
 }
 
 @group(0) @binding(0)
@@ -32,7 +32,7 @@ fn vs_main(
     model: VertexInput
 ) -> VertexOutput {
     var out: VertexOutput;
-    out.clip_position = camera.view_projection * mesh_uniform.world_transform * vec4<f32>(model.position, 1.0);
+    out.clip_position = camera.view_projection_matrix * mesh_uniform.world_transform * vec4<f32>(model.position, 1.0);
     out.texture_coordinates = model.texture_coordinates;
     return out;
 }
