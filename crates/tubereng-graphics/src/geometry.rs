@@ -116,9 +116,9 @@ pub struct Model {
 }
 
 pub struct Mesh {
-    pub(crate) vertex_buffer: usize,
-    pub(crate) index_buffer: Option<usize>,
-    pub(crate) element_count: u32,
+    pub vertex_buffer: usize,
+    pub index_buffer: Option<usize>,
+    pub element_count: u32,
 }
 
 #[repr(C)]

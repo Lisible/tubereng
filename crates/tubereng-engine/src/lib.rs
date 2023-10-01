@@ -1,26 +1,38 @@
 #![warn(clippy::pedantic)]
 
+use std::marker::PhantomData;
+
 use log::info;
 use tubereng_assets::{AssetStore, FS};
 use tubereng_ecs::{
     system::{Into, System, SystemFn},
     Ecs,
 };
-use tubereng_graphics::{Renderer, WindowSize};
+use tubereng_graphics::{
+    pipeline::{default_pipeline::DefaultRenderPipeline, RenderPipeline},
+    Renderer, WindowSize,
+};
 
-pub struct Engine {
+pub struct Engine<R = DefaultRenderPipeline>
+where
+    R: RenderPipeline,
+{
     application_title: &'static str,
     ecs: Ecs,
-    renderer: Option<Renderer>,
+
+    renderer: Option<Renderer<R>>,
 }
 
-impl Engine {
+impl<R> Engine<R>
+where
+    R: RenderPipeline,
+{
     #[must_use]
     pub fn application_title(&self) -> &'static str {
         self.application_title
     }
 
-    pub fn initialize_renderer(&mut self, renderer: Renderer) {
+    pub fn initialize_renderer(&mut self, renderer: Renderer<R>) {
         self.renderer = Some(renderer);
         info!("Renderer initialized");
     }
@@ -61,17 +73,25 @@ impl Engine {
     }
 }
 
-pub struct EngineBuilder {
+pub struct EngineBuilder<R = DefaultRenderPipeline>
+where
+    R: RenderPipeline,
+{
     application_title: Option<&'static str>,
     setup_system: Option<Box<dyn System>>,
+    _marker: PhantomData<R>,
 }
 
-impl EngineBuilder {
+impl<R> EngineBuilder<R>
+where
+    R: RenderPipeline,
+{
     #[must_use]
     pub fn new() -> Self {
         Self {
             application_title: None,
             setup_system: None,
+            _marker: PhantomData,
         }
     }
 
@@ -92,7 +112,7 @@ impl EngineBuilder {
     }
 
     #[must_use]
-    pub fn build(self) -> Engine {
+    pub fn build(self) -> Engine<R> {
         let mut ecs = Ecs::new();
         ecs.register_setup_system(self.setup_system.unwrap_or(Box::new(Into::into(|| {}))));
         ecs.insert_resource(AssetStore::<FS>::new());

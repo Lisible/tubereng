@@ -1,6 +1,6 @@
 use log::info;
 use tubereng_engine::Engine;
-use tubereng_graphics::{Renderer, WindowSize};
+use tubereng_graphics::{pipeline::RenderPipeline, Renderer, WindowSize};
 use winit::{
     event::{Event, WindowEvent},
     event_loop::EventLoop,
@@ -12,7 +12,10 @@ use wasm_bindgen::prelude::*;
 
 pub struct WinitTuberRunner;
 impl WinitTuberRunner {
-    pub async fn run(mut engine: Engine) {
+    pub async fn run<R>(mut engine: Engine<R>)
+    where
+        R: 'static + RenderPipeline,
+    {
         info!("Engine starting up...");
         let event_loop = EventLoop::new();
         let window = WindowBuilder::new()

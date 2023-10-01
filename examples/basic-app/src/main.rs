@@ -7,7 +7,7 @@ use tubereng::{
     assets::{AssetHandle, AssetStore},
     core::Transform,
     ecs::{commands::CommandBuffer, query::Q, system::ResMut},
-    engine::EngineBuilder,
+    engine::{Engine, EngineBuilder},
     graphics::{
         camera::{ActiveCamera, Camera},
         geometry::ModelAsset,
@@ -19,7 +19,7 @@ use tubereng::{
 
 fn main() {
     env_logger::init();
-    let engine = EngineBuilder::new()
+    let engine: Engine = EngineBuilder::new()
         .with_application_title("Basic Application")
         .with_setup_system(setup)
         .build();

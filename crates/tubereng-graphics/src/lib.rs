@@ -3,7 +3,7 @@
 
 use geometry::ModelCache;
 use material::{MaterialAsset, MaterialCache};
-use pipeline::{default_pipeline::DefaultRenderPipeline, RenderPipeline};
+use pipeline::RenderPipeline;
 use std::{collections::HashMap, future::Future};
 use texture::TextureCache;
 use tubereng_assets::{AssetHandle, AssetStore};
@@ -45,7 +45,7 @@ impl WindowSize {
     }
 }
 
-pub struct Renderer<R = DefaultRenderPipeline>
+pub struct Renderer<R>
 where
     R: RenderPipeline,
 {
@@ -227,31 +227,31 @@ where
 }
 
 pub struct DrawCommand {
-    vertex_buffer: usize,
-    index_buffer: Option<usize>,
-    element_count: u32,
-    material_handle: AssetHandle<MaterialAsset>,
+    pub vertex_buffer: usize,
+    pub index_buffer: Option<usize>,
+    pub element_count: u32,
+    pub material_handle: AssetHandle<MaterialAsset>,
 }
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct MeshUniform {
-    world_transform: [[f32; 4]; 4],
-    _padding: [u64; 24],
+    pub world_transform: [[f32; 4]; 4],
+    pub _padding: [u64; 24],
 }
 
 pub struct RenderingContext {
-    pub(crate) size: PhysicalSize<u32>,
-    pub(crate) surface: wgpu::Surface,
-    pub(crate) surface_configuration: wgpu::SurfaceConfiguration,
-    pub(crate) pipelines: HashMap<String, wgpu::RenderPipeline>,
-    pub(crate) shader_modules: HashMap<String, wgpu::ShaderModule>,
-    pub(crate) device: wgpu::Device,
-    pub(crate) queue: wgpu::Queue,
-    pub(crate) draw_commands: Vec<DrawCommand>,
-    pub(crate) vertex_buffers: Vec<wgpu::Buffer>,
-    pub(crate) index_buffers: Vec<wgpu::Buffer>,
-    pub(crate) texture_cache: TextureCache,
-    pub(crate) material_cache: MaterialCache,
-    pub(crate) model_cache: ModelCache,
+    pub size: PhysicalSize<u32>,
+    pub surface: wgpu::Surface,
+    pub surface_configuration: wgpu::SurfaceConfiguration,
+    pub pipelines: HashMap<String, wgpu::RenderPipeline>,
+    pub shader_modules: HashMap<String, wgpu::ShaderModule>,
+    pub device: wgpu::Device,
+    pub queue: wgpu::Queue,
+    pub draw_commands: Vec<DrawCommand>,
+    pub vertex_buffers: Vec<wgpu::Buffer>,
+    pub index_buffers: Vec<wgpu::Buffer>,
+    pub texture_cache: TextureCache,
+    pub material_cache: MaterialCache,
+    pub model_cache: ModelCache,
 }
