@@ -1,5 +1,6 @@
 use crate::{
     camera::{ActiveCamera, Camera, OPENGL_TO_WGPU_MATRIX},
+    color::srgb_perceived_lightness,
     geometry::ModelAsset,
     material::MaterialAsset,
     render_graph::{RenderGraph, RenderPass},
@@ -12,12 +13,14 @@ use tubereng_assets::{AssetHandle, AssetStore};
 use tubereng_core::Transform;
 use tubereng_ecs::{entity::EntityStore, query::Q};
 use tubereng_math::matrix::{Identity, Matrix4f};
-use wgpu::util::DeviceExt;
+use wgpu::util::{BufferInitDescriptor, DeviceExt};
 
 use crate::{camera::CameraUniform, MeshUniform, RenderingContext};
 
 use super::RenderPipeline;
 
+const SKY_TOP_COLOR: [f32; 4] = [0.192, 0.302, 0.475, 1.0];
+const SKY_BOTTOM_COLOR: [f32; 4] = [0.324, 0.179, 0.069, 1.0];
 pub struct DefaultRenderPipeline {
     material_bind_group_layout: wgpu::BindGroupLayout,
     mesh_uniform_buffer: wgpu::Buffer,
@@ -35,6 +38,11 @@ pub struct DefaultRenderPipeline {
     gradient_uniform_bind_group_layout: wgpu::BindGroupLayout,
     gradient_uniform_bind_group: wgpu::BindGroup,
     depth_buffer_texture_handle: DepthBufferTextureHandle,
+
+    light_storage: LightStorage,
+    light_storage_buffer: wgpu::Buffer,
+    light_storage_bind_group_layout: wgpu::BindGroupLayout,
+    light_storage_bind_group: wgpu::BindGroup,
 }
 
 impl DefaultRenderPipeline {
@@ -189,6 +197,91 @@ impl DefaultRenderPipeline {
             gradient_uniform_bind_group,
         )
     }
+
+    fn create_light_storage_bind_group(
+        device: &wgpu::Device,
+        light_storage_buffer: &wgpu::Buffer,
+    ) -> (wgpu::BindGroupLayout, wgpu::BindGroup) {
+        let light_storage_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("light_storage_bind_group_layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            });
+        let light_storage_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("light_storage_bind_group"),
+            layout: &light_storage_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: light_storage_buffer.as_entire_binding(),
+            }],
+        });
+        (light_storage_bind_group_layout, light_storage_bind_group)
+    }
+
+    fn add_skybox_pass<'a>(
+        &'a self,
+        render_graph: &mut RenderGraph<'a>,
+        render_target: crate::render_graph::RenderTargetId,
+    ) {
+        RenderPass::new("skybox", render_graph)
+            .with_no_vertex_buffer()
+            .with_shader("gradient_sky")
+            .with_render_target(render_target)
+            .with_bind_group(
+                &self.gradient_uniform_bind_group_layout,
+                &self.gradient_uniform_bind_group,
+            )
+            .dispatch(
+                |rpass,
+                 bind_groups,
+                 _draw_commands,
+                 _material_cache,
+                 _vertex_buffers,
+                 _index_buffers| {
+                    rpass.set_bind_group(0, bind_groups[0], &[]);
+                    rpass.draw(0..3, 0..1);
+                },
+            );
+    }
+
+    fn extract_lights(&mut self, entity_store: &EntityStore) {
+        self.light_storage.point_light_count = 0;
+        for (i, (point_light, transform)) in
+            Q::<(&crate::light::PointLight, &Transform)>::new(entity_store)
+                .iter()
+                .take(10)
+                .enumerate()
+        {
+            self.light_storage.point_light_count += 1;
+            self.light_storage.point_lights[i] = PointLight {
+                position: [
+                    transform.translation.x,
+                    transform.translation.y,
+                    transform.translation.z,
+                ],
+                _padding: 0,
+                color: [
+                    point_light.color.x,
+                    point_light.color.y,
+                    point_light.color.z,
+                ],
+                _padding2: 0,
+                constant: point_light.constant,
+                linear: point_light.linear,
+                quadratic: point_light.quadratic,
+                _padding3: 0,
+            };
+        }
+    }
 }
 
 impl RenderPipeline for DefaultRenderPipeline {
@@ -198,21 +291,7 @@ impl RenderPipeline for DefaultRenderPipeline {
         texture_cache: &mut TextureCache,
         shader_modules: &mut HashMap<String, wgpu::ShaderModule>,
     ) -> Self {
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
-        });
-        shader_modules.insert("shader".into(), shader);
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Gradient sky shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("gradient_sky.wgsl").into()),
-        });
-        shader_modules.insert("gradient_sky".into(), shader);
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Debug grid shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("debug_grid.wgsl").into()),
-        });
-        shader_modules.insert("debug_grid".into(), shader);
+        load_shaders(device, shader_modules);
 
         let camera_uniform = CameraUniform::new();
         let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -245,8 +324,8 @@ impl RenderPipeline for DefaultRenderPipeline {
         let material_bind_group_layout = Self::create_material_bind_group_layout(device);
 
         let gradient_uniform = GradientUniform {
-            top_color: [0.192, 0.302, 0.475, 1.0],
-            bottom_color: [0.324, 0.179, 0.069, 1.0],
+            top_color: SKY_TOP_COLOR,
+            bottom_color: SKY_BOTTOM_COLOR,
         };
 
         let gradient_uniform_buffer =
@@ -258,6 +337,29 @@ impl RenderPipeline for DefaultRenderPipeline {
 
         let (gradient_uniform_bind_group_layout, gradient_uniform_bind_group) =
             Self::create_gradient_uniform_bind_group(device, &gradient_uniform_buffer);
+
+        let ambient_light =
+            srgb_perceived_lightness(SKY_TOP_COLOR[0], SKY_TOP_COLOR[1], SKY_TOP_COLOR[2])
+                + srgb_perceived_lightness(
+                    SKY_BOTTOM_COLOR[0],
+                    SKY_BOTTOM_COLOR[1],
+                    SKY_BOTTOM_COLOR[2],
+                ) / 2.0;
+
+        let light_storage = LightStorage {
+            ambient_light_factor: ambient_light,
+            point_light_count: 0,
+            point_lights: [PointLight::default(); 10],
+            _padding: 0,
+        };
+
+        let light_storage_buffer = device.create_buffer_init(&BufferInitDescriptor {
+            label: Some("light_storage_buffer"),
+            contents: bytemuck::cast_slice(&[light_storage]),
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::STORAGE,
+        });
+        let (light_storage_bind_group_layout, light_storage_bind_group) =
+            Self::create_light_storage_bind_group(device, &light_storage_buffer);
 
         let depth_texture_handle = texture_cache.create_depth_texture(
             device,
@@ -283,6 +385,10 @@ impl RenderPipeline for DefaultRenderPipeline {
             inverse_camera_buffer,
             inverse_camera_bind_group_layout,
             inverse_camera_bind_group,
+            light_storage,
+            light_storage_buffer,
+            light_storage_bind_group_layout,
+            light_storage_bind_group,
         }
     }
 
@@ -302,6 +408,8 @@ impl RenderPipeline for DefaultRenderPipeline {
                 .expect("No inverse for camera transform matrix");
         self.camera_uniform
             .set_view_projection_matrix(camera_view_projection_matrix);
+        self.camera_uniform
+            .set_position(camera_transform.translation);
         ctx.queue.write_buffer(
             &self.camera_buffer,
             0,
@@ -364,11 +472,24 @@ impl RenderPipeline for DefaultRenderPipeline {
                     (i * std::mem::size_of::<MeshUniform>()) as u64,
                     bytemuck::cast_slice(&[MeshUniform {
                         world_transform: transform.as_matrix4().into(),
-                        _padding: [0; 24],
+                        inverse_world_transform: transform
+                            .as_matrix4()
+                            .try_inverse()
+                            .unwrap()
+                            .into(),
+                        _padding: [0u64; 16],
                     }]),
                 );
             }
         }
+
+        self.extract_lights(entity_store);
+
+        ctx.queue.write_buffer(
+            &self.light_storage_buffer,
+            0,
+            bytemuck::cast_slice(&[self.light_storage]),
+        );
 
         Ok(())
     }
@@ -382,25 +503,7 @@ impl RenderPipeline for DefaultRenderPipeline {
         let mut render_graph = RenderGraph::new();
         let render_target = render_graph.register_render_target(view);
 
-        RenderPass::new("skybox", &mut render_graph)
-            .with_no_vertex_buffer()
-            .with_shader("gradient_sky")
-            .with_render_target(render_target)
-            .with_bind_group(
-                &self.gradient_uniform_bind_group_layout,
-                &self.gradient_uniform_bind_group,
-            )
-            .dispatch(
-                |rpass,
-                 bind_groups,
-                 _draw_commands,
-                 _material_cache,
-                 _vertex_buffers,
-                 _index_buffers| {
-                    rpass.set_bind_group(0, bind_groups[0], &[]);
-                    rpass.draw(0..3, 0..1);
-                },
-            );
+        self.add_skybox_pass(&mut render_graph, render_target);
 
         RenderPass::new("render_pass", &mut render_graph)
             .with_shader("shader")
@@ -409,6 +512,14 @@ impl RenderPipeline for DefaultRenderPipeline {
             .with_bind_group(&self.camera_bind_group_layout, &self.camera_bind_group)
             .with_bind_group(&self.mesh_bind_group_layout, &self.mesh_bind_group)
             .with_bind_group_layout(&self.material_bind_group_layout)
+            .with_bind_group(
+                &self.light_storage_bind_group_layout,
+                &self.light_storage_bind_group,
+            )
+            .with_bind_group(
+                &self.light_storage_bind_group_layout,
+                &self.light_storage_bind_group,
+            )
             .dispatch(
                 |rpass,
                  bind_groups,
@@ -434,6 +545,8 @@ impl RenderPipeline for DefaultRenderPipeline {
                             bind_groups[1],
                             &[u32::try_from(draw_command_index * 256).unwrap()],
                         );
+                        rpass.set_bind_group(3, bind_groups[2], &[]);
+                        rpass.set_bind_group(4, bind_groups[3], &[]);
                         let material = material_cache
                             .get(draw_command.material_handle)
                             .expect("Material not found in cache");
@@ -484,6 +597,24 @@ impl RenderPipeline for DefaultRenderPipeline {
     }
 }
 
+fn load_shaders(device: &wgpu::Device, shader_modules: &mut HashMap<String, wgpu::ShaderModule>) {
+    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("Shader"),
+        source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
+    });
+    shader_modules.insert("shader".into(), shader);
+    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("Gradient sky shader"),
+        source: wgpu::ShaderSource::Wgsl(include_str!("gradient_sky.wgsl").into()),
+    });
+    shader_modules.insert("gradient_sky".into(), shader);
+    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("Debug grid shader"),
+        source: wgpu::ShaderSource::Wgsl(include_str!("debug_grid.wgsl").into()),
+    });
+    shader_modules.insert("debug_grid".into(), shader);
+}
+
 #[repr(C)]
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct GradientUniform {
@@ -495,4 +626,26 @@ struct GradientUniform {
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct InverseCameraUniform {
     view_projection_inverse: [[f32; 4]; 4],
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct LightStorage {
+    ambient_light_factor: f32,
+    point_light_count: u32,
+    _padding: u64,
+    point_lights: [PointLight; 10],
+}
+
+#[repr(C)]
+#[derive(Default, Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct PointLight {
+    position: [f32; 3],
+    _padding: u32,
+    color: [f32; 3],
+    _padding2: u32,
+    constant: f32,
+    linear: f32,
+    quadratic: f32,
+    _padding3: u32,
 }

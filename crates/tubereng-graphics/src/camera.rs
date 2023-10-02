@@ -142,6 +142,8 @@ fn move_camera(
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct CameraUniform {
+    position: [f32; 3],
+    _padding: u32,
     view_projection_matrix: [[f32; 4]; 4],
 }
 
@@ -150,11 +152,19 @@ impl CameraUniform {
     pub fn new() -> Self {
         Self {
             view_projection_matrix: Matrix4f::identity().into(),
+            _padding: 0,
+            position: [0.0, 0.0, 0.0],
         }
     }
 
     pub fn set_view_projection_matrix(&mut self, view_projection_matrix: Matrix4f) {
         self.view_projection_matrix = view_projection_matrix.into();
+    }
+
+    pub fn set_position(&mut self, position: Vector3f) {
+        self.position[0] = position.x;
+        self.position[1] = position.y;
+        self.position[2] = position.z;
     }
 }
 

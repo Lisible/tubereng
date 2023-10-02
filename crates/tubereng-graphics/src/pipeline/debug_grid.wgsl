@@ -1,4 +1,5 @@
 struct CameraUniform {
+	position: vec3<f32>,
     view_projection_matrix: mat4x4<f32>,
 }
 

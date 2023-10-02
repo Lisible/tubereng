@@ -1,12 +1,6 @@
 #![warn(clippy::pedantic)]
 
-use std::{
-    any::{Any, TypeId},
-    collections::HashMap,
-    hash::Hasher,
-    marker::PhantomData,
-    path::PathBuf,
-};
+use std::{any::Any, hash::Hasher, marker::PhantomData, path::PathBuf};
 
 pub type Result<T> = std::result::Result<T, AssetError>;
 
@@ -66,7 +60,7 @@ impl<T: 'static> AssetHandle<T> {
 }
 
 pub struct AssetStore<FileSys = FS> {
-    assets: HashMap<TypeId, Vec<Box<dyn Any>>>,
+    assets: Vec<Box<dyn Any>>,
     _marker: PhantomData<FileSys>,
 }
 impl<FS> AssetStore<FS>
@@ -76,7 +70,7 @@ where
     #[must_use]
     pub fn new() -> Self {
         Self {
-            assets: HashMap::new(),
+            assets: vec![],
             _marker: PhantomData,
         }
     }
@@ -109,20 +103,14 @@ where
                 .ok_or(AssetError::AssetPathIsInvalidUTF8)?,
         )?;
         let asset = A::Loader::load(&bytes)?;
-        let assets = self
-            .assets
-            .entry(TypeId::of::<A>())
-            .or_insert_with(Vec::new);
-        let asset_id = assets.len();
-        assets.push(Box::new(asset));
+        let asset_id = self.assets.len();
+        self.assets.push(Box::new(asset));
         Ok(AssetHandle::new(asset_id))
     }
 
     #[must_use]
     pub fn get<T: 'static>(&self, handle: AssetHandle<T>) -> Option<&T> {
-        self.assets[&TypeId::of::<T>()]
-            .get(handle.id)?
-            .downcast_ref()
+        self.assets.get(handle.id)?.downcast_ref()
     }
 }
 

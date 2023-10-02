@@ -28,10 +28,26 @@ impl AssetLoader<ModelAsset> for ModelAssetLoader {
         for face in &obj_model.faces {
             for triplet in &face.triplets {
                 let pos = &obj_model.geometric_vertices[triplet.geometric_vertex - 1];
-                let uv = &obj_model.texture_vertices[triplet.texture_vertex.unwrap() - 1];
+
+                let texture_coordinates = if let Some(texture_vertex_index) = triplet.texture_vertex
+                {
+                    let texture_vertex = &obj_model.texture_vertices[texture_vertex_index - 1];
+                    [texture_vertex.u, texture_vertex.v]
+                } else {
+                    [0.0, 0.0]
+                };
+
+                let normal = if let Some(vertex_normal_index) = triplet.vertex_normal {
+                    let normal_vertex = &obj_model.vertex_normals[vertex_normal_index - 1];
+                    [normal_vertex.i, normal_vertex.j, normal_vertex.k]
+                } else {
+                    [0.0, 0.0, 0.0]
+                };
+
                 vertices.push(Vertex {
                     position: [pos.x, pos.y, pos.z],
-                    texture_coordinates: [uv.u, uv.v],
+                    normal,
+                    texture_coordinates,
                 });
             }
         }
@@ -125,12 +141,13 @@ pub struct Mesh {
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Vertex {
     position: [f32; 3],
+    normal: [f32; 3],
     texture_coordinates: [f32; 2],
 }
 
 impl Vertex {
-    const ATTRIBUTES: [wgpu::VertexAttribute; 2] =
-        wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x2];
+    const ATTRIBUTES: [wgpu::VertexAttribute; 3] =
+        wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x2];
 
     #[must_use]
     pub fn buffer_layout() -> wgpu::VertexBufferLayout<'static> {

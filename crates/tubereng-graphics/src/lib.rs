@@ -26,7 +26,9 @@ pub struct Cube {
 }
 
 pub mod camera;
+pub mod color;
 pub mod geometry;
+pub mod light;
 pub mod material;
 pub mod pipeline;
 pub mod render_graph;
@@ -147,7 +149,10 @@ where
                 limits: if cfg!(target_arch = "wasm32") {
                     wgpu::Limits::downlevel_webgl2_defaults()
                 } else {
-                    wgpu::Limits::default()
+                    wgpu::Limits {
+                        max_bind_groups: 8,
+                        ..Default::default()
+                    }
                 },
             },
             None,
@@ -237,7 +242,8 @@ pub struct DrawCommand {
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct MeshUniform {
     pub world_transform: [[f32; 4]; 4],
-    pub _padding: [u64; 24],
+    pub inverse_world_transform: [[f32; 4]; 4],
+    _padding: [u64; 16],
 }
 
 pub struct RenderingContext {
