@@ -342,7 +342,7 @@ impl RenderPipeline for DefaultRenderPipeline {
                     model_handle,
                     asset_store,
                     &mut ctx.vertex_buffers,
-                    &mut ctx.index_buffers,
+                    &ctx.index_buffers,
                     &ctx.device,
                 )?;
             }

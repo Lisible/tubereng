@@ -26,7 +26,7 @@ where
     }
 
     #[must_use]
-    pub fn iter(&'q self) -> Iter<QD> {
+    pub fn iter(self) -> Iter<'q, QD> {
         Iter {
             current_index: 0,
             ecs: self.entity_store,
@@ -159,6 +159,7 @@ mod tests {
 
         let query = Q::<(&Player, &Health)>::new(&ecs.entity_store);
         assert_eq!(query.iter().count(), 2);
+        let query = Q::<(&Player, &Health)>::new(&ecs.entity_store);
         for (_player, health) in query.iter() {
             assert!(health.0 >= 8);
         }
@@ -192,12 +193,14 @@ mod tests {
 
         let query_mutate_health = Q::<(&Player, &mut Health)>::new(&ecs.entity_store);
         assert_eq!(query_mutate_health.iter().count(), 2);
+        let query_mutate_health = Q::<(&Player, &mut Health)>::new(&ecs.entity_store);
         for (_player, mut health) in query_mutate_health.iter() {
             health.0 = 0;
         }
 
         let query_health = Q::<(&Player, &Health)>::new(&ecs.entity_store);
         assert_eq!(query_health.iter().count(), 2);
+        let query_health = Q::<(&Player, &Health)>::new(&ecs.entity_store);
         for (_player, health) in query_health.iter() {
             assert_eq!(health.0, 0);
         }

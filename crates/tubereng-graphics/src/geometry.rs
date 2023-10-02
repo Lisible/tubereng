@@ -75,7 +75,7 @@ impl ModelCache {
         model_asset_handle: AssetHandle<ModelAsset>,
         asset_store: &mut AssetStore,
         vertex_buffers: &mut Vec<wgpu::Buffer>,
-        _index_buffers: &mut Vec<wgpu::Buffer>,
+        _index_buffers: &[wgpu::Buffer],
         device: &wgpu::Device,
     ) -> Result<()> {
         let model_asset = asset_store

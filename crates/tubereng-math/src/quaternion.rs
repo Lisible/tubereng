@@ -58,6 +58,12 @@ where
         Quaternion::new(w, Vector3::new(x, y, z))
     }
 
+    pub fn apply_to_vector(&self, v: &Vector3<T>) -> Vector3<T> {
+        let u = self.vector_part;
+        let s = self.scalar_part;
+        u * u.dot(v) * T::two() + *v * (s * s - u.dot(&u)) + u.cross(v) * T::two() * s
+    }
+
     #[rustfmt::skip]
     #[allow(clippy::similar_names)]
     pub fn rotation_matrix(&self) -> Matrix4<T> {
@@ -159,7 +165,11 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::f32::consts::PI;
+
     use assert_float_eq::assert_float_absolute_eq;
+
+    use crate::vector::Vector3f;
 
     use super::*;
 
@@ -256,5 +266,15 @@ mod tests {
         assert_float_absolute_eq!(quaternion.vector_part.x, -0.48, 0.01);
         assert_float_absolute_eq!(quaternion.vector_part.y, -0.38, 0.01);
         assert_float_absolute_eq!(quaternion.vector_part.z, 0.56, 0.01);
+    }
+
+    #[test]
+    #[allow(clippy::cast_possible_truncation)]
+    fn apply_to_vector() {
+        let rotation = Quaternion::from_axis_angle(&Vector3f::new(0.0, 1.0, 0.0), PI);
+        let rotated_vector = rotation.apply_to_vector(&Vector3f::new(1.0, 0.0, 0.0));
+        assert_eq!(rotated_vector.x as i32, -1);
+        assert_eq!(rotated_vector.y as i32, 0);
+        assert_eq!(rotated_vector.z as i32, 0);
     }
 }

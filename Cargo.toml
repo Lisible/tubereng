@@ -20,3 +20,4 @@ tubereng-ecs = { path = "crates/tubereng-ecs" }
 tubereng-assets = { path = "crates/tubereng-assets" }
 tubereng-winit = { path = "crates/tubereng-winit" }
 tubereng-graphics = { path = "crates/tubereng-graphics" }
+tubereng-input = { path = "crates/tubereng-input" }

@@ -7,6 +7,7 @@ edition = "2021"
 
 [dependencies]
 tubereng-engine = { path = "../tubereng-engine" }
+tubereng-input = { path = "../tubereng-input" }
 tubereng-graphics = { path = "../tubereng-graphics" }
 winit = "0.28"
 log = "0.4"

@@ -1,8 +1,9 @@
 #![warn(clippy::pedantic)]
 
-use std::marker::PhantomData;
+use std::{cell::RefMut, marker::PhantomData};
+use tubereng_input::{Input, InputState};
 
-use log::info;
+use log::{debug, info};
 use tubereng_assets::{AssetStore, FS};
 use tubereng_ecs::{
     system::{Into, System, SystemFn},
@@ -19,7 +20,6 @@ where
 {
     application_title: &'static str,
     ecs: Ecs,
-
     renderer: Option<Renderer<R>>,
 }
 
@@ -44,6 +44,21 @@ where
     pub fn update(&mut self) {
         self.ecs.run_systems();
         self.ecs.execute_pending_commands();
+    }
+
+    fn input_state(&mut self) -> RefMut<InputState> {
+        self.ecs
+            .resource_mut::<InputState>()
+            .expect("Input state not foudn in resources")
+    }
+
+    pub fn clear_last_frame_inputs(&mut self) {
+        self.input_state().clear_last_frame_inputs();
+    }
+
+    pub fn on_input(&mut self, input: Input) {
+        debug!("Handling input: {:?}", input);
+        self.input_state().on_input(input);
     }
 
     /// # Panics
@@ -116,6 +131,7 @@ where
         let mut ecs = Ecs::new();
         ecs.register_setup_system(self.setup_system.unwrap_or(Box::new(Into::into(|| {}))));
         ecs.insert_resource(AssetStore::<FS>::new());
+        ecs.insert_resource(InputState::new());
 
         Engine {
             application_title: self.application_title.unwrap_or("TuberApp"),

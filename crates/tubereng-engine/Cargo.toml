@@ -9,4 +9,5 @@ edition = "2021"
 tubereng-assets = { path = "../tubereng-assets" }
 tubereng-ecs = { path = "../tubereng-ecs" }
 tubereng-graphics = { path = "../tubereng-graphics" }
+tubereng-input = { path = "../tubereng-input" }
 log = "0.4"

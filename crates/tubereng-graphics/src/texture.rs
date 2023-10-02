@@ -34,9 +34,9 @@ const MAX_TEXTURE_COUNT: usize = 4096;
 pub struct DepthBufferTextureHandle(usize);
 pub struct DepthBufferTexture {
     pub(crate) label: String,
-    pub(crate) texture: wgpu::Texture,
+    pub(crate) _texture: wgpu::Texture,
     pub(crate) view: wgpu::TextureView,
-    pub(crate) sampler: wgpu::Sampler,
+    pub(crate) _sampler: wgpu::Sampler,
     pub(crate) recreate_on_window_resize: bool,
 }
 
@@ -100,7 +100,7 @@ impl TextureCache {
         };
 
         let texture_descriptor = wgpu::TextureDescriptor {
-            label: Some(&label),
+            label: Some(label),
             size,
             mip_level_count: 1,
             sample_count: 1,
@@ -128,9 +128,9 @@ impl TextureCache {
 
         DepthBufferTexture {
             label: label.to_string(),
-            texture,
+            _texture: texture,
             view,
-            sampler,
+            _sampler: sampler,
             recreate_on_window_resize,
         }
     }
