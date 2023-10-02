@@ -83,11 +83,11 @@ fn rotate_camera(
     {
         transform.rotation = Quaternion::from_axis_angle(
             &Vector3f::new(0.0, 1.0, 0.0),
-            -mouse_motion.0 as f32 * 0.001,
+            -mouse_motion.0 as f32 * 0.01,
         ) * transform.rotation.clone()
             * Quaternion::from_axis_angle(
                 &Vector3f::new(1.0, 0.0, 0.0),
-                -mouse_motion.1 as f32 * 0.001,
+                -mouse_motion.1 as f32 * 0.01,
             );
     }
 }
