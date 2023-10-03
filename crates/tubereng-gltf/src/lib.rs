@@ -464,3 +464,25 @@ pub struct Asset {
 
 type Extension = JSONValue;
 type Extras = JSONValue;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn simple_gltf() {
+        let gltf_str = include_str!("./test_data/1.gltf");
+        let gltf: Gltf = serde_json::from_str(gltf_str).unwrap();
+        assert_eq!(&gltf.asset.version, "2.0");
+        assert_eq!(
+            &gltf.asset.generator.unwrap(),
+            "Khronos glTF Blender I/O v3.3.36"
+        );
+        assert_eq!(gltf.scene.unwrap(), 0);
+        assert_eq!(gltf.scenes.len(), 1);
+        assert_eq!(gltf.materials.len(), 1);
+        assert_eq!(gltf.nodes.len(), 2);
+        assert_eq!(gltf.textures.len(), 1);
+        assert_eq!(gltf.images.len(), 1);
+    }
+}
