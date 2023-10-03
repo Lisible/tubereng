@@ -5,23 +5,39 @@ use serde_json::Value as JSONValue;
 
 /// <https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#reference-gltf>
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Gltf {
+    #[serde(default)]
     pub extensions_used: Vec<String>,
+    #[serde(default)]
     pub extensions_required: Vec<String>,
+    #[serde(default)]
     pub accessors: Vec<Accessor>,
+    #[serde(default)]
     pub animations: Vec<Animation>,
     pub asset: Asset,
+    #[serde(default)]
     pub buffers: Vec<Buffer>,
+    #[serde(default)]
     pub buffer_views: Vec<BufferView>,
+    #[serde(default)]
     pub cameras: Vec<Camera>,
+    #[serde(default)]
     pub images: Vec<Image>,
+    #[serde(default)]
     pub materials: Vec<Material>,
+    #[serde(default)]
     pub meshes: Vec<Mesh>,
+    #[serde(default)]
     pub nodes: Vec<Node>,
+    #[serde(default)]
     pub samplers: Vec<Sampler>,
     pub scene: Option<usize>,
+    #[serde(default)]
     pub scenes: Vec<Scene>,
+    #[serde(default)]
     pub skins: Vec<Skin>,
+    #[serde(default)]
     pub textures: Vec<Texture>,
     pub extensions: Option<Extension>,
     pub extras: Option<Extras>,
@@ -29,6 +45,7 @@ pub struct Gltf {
 
 /// <https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#reference-texture>
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Texture {
     pub sampler: Option<usize>,
     pub source: Option<usize>,
@@ -39,9 +56,11 @@ pub struct Texture {
 
 /// <https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#reference-skin>
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Skin {
     pub inverse_bind_matrices: Option<usize>,
     pub skeleton: Option<usize>,
+    #[serde(default)]
     pub joints: Vec<usize>,
     pub name: Option<String>,
     pub extensions: Option<Extension>,
@@ -50,8 +69,11 @@ pub struct Skin {
 
 /// <https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#reference-animation>
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Animation {
+    #[serde(default)]
     pub channels: Vec<AnimationChannel>,
+    #[serde(default)]
     pub samplers: Vec<AnimationSampler>,
     pub name: Option<String>,
     pub extensions: Option<Extension>,
@@ -60,6 +82,7 @@ pub struct Animation {
 
 /// <https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#reference-animation-sampler>
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AnimationSampler {
     pub input: usize,
     #[serde(default = "animation_sampler_default_interpolation")]
@@ -75,6 +98,7 @@ fn animation_sampler_default_interpolation() -> String {
 
 /// <https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#reference-animation-channel>
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AnimationChannel {
     pub sampler: usize,
     pub target: AnimationChannelTarget,
@@ -84,6 +108,7 @@ pub struct AnimationChannel {
 
 /// <https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#reference-animation-channel-target>
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AnimationChannelTarget {
     pub node: Option<usize>,
     pub path: String,
@@ -93,7 +118,9 @@ pub struct AnimationChannelTarget {
 
 /// <https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#reference-scene>
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Scene {
+    #[serde(default)]
     pub nodes: Vec<usize>,
     pub name: Option<String>,
     pub extensions: Option<Extension>,
@@ -102,6 +129,7 @@ pub struct Scene {
 
 /// <https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#reference-sampler>
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Sampler {
     pub mag_filter: Option<usize>,
     pub min_filter: Option<usize>,
@@ -120,8 +148,10 @@ const fn default_sampler_wrap() -> usize {
 
 /// <https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#reference-node>
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Node {
     pub camera: Option<usize>,
+    #[serde(default)]
     pub children: Vec<usize>,
     pub skin: Option<usize>,
     #[serde(default = "default_node_matrix")]
@@ -133,6 +163,7 @@ pub struct Node {
     pub scale: [f32; 3],
     #[serde(default)]
     pub translation: [f32; 3],
+    #[serde(default)]
     pub weights: Vec<f32>,
     pub name: Option<String>,
     pub extensions: Option<Extension>,
@@ -159,8 +190,11 @@ const fn default_node_scale() -> [f32; 3] {
 
 /// <https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#reference-mesh>
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Mesh {
+    #[serde(default)]
     pub primitives: Vec<MeshPrimitive>,
+    #[serde(default)]
     pub weights: Vec<f32>,
     pub name: Option<String>,
     pub extensions: Option<Extension>,
@@ -169,12 +203,14 @@ pub struct Mesh {
 
 /// <https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#reference-mesh-primitive>
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MeshPrimitive {
     pub attributes: JSONValue,
     pub indices: Option<usize>,
     pub material: Option<usize>,
     #[serde(default = "default_mesh_primitive_mode")]
     pub mode: usize,
+    #[serde(default)]
     pub targets: Vec<JSONValue>,
     pub extensions: Option<Extension>,
     pub extras: Option<Extras>,
@@ -186,6 +222,7 @@ const fn default_mesh_primitive_mode() -> usize {
 
 /// <https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#reference-material>
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Material {
     pub name: Option<String>,
     pub extensions: Option<Extension>,
@@ -213,6 +250,7 @@ const fn default_material_alpha_cutoff() -> f32 {
 
 /// <https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#reference-material-pbrmetallicroughness>
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MaterialPbrMetallicRoughness {
     #[serde(default = "default_material_pbr_metallic_roughness_base_color_factor")]
     pub base_color_factor: [f32; 4],
@@ -240,6 +278,7 @@ const fn default_material_pbr_metallic_roughness_roughness_factor() -> f32 {
 
 /// <https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#reference-textureinfo>
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TextureInfo {
     pub index: usize,
     #[serde(default)]
@@ -250,6 +289,7 @@ pub struct TextureInfo {
 
 /// <https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#reference-material-pbrmetallicroughness>
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MaterialNormalTextureInfo {
     pub index: usize,
     #[serde(default)]
@@ -266,6 +306,7 @@ const fn default_material_normal_texture_info_scale() -> f32 {
 
 /// <https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#reference-material-occlusiontextureinfo>
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MaterialOcclusionTextureInfo {
     pub index: usize,
     #[serde(default)]
@@ -282,6 +323,7 @@ const fn default_material_occlusion_texture_info_strength() -> f32 {
 
 /// <https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#reference-image>
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Image {
     pub uri: Option<String>,
     pub mime_type: Option<String>,
@@ -293,6 +335,7 @@ pub struct Image {
 
 /// <https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#reference-camera>
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Camera {
     pub orthographic: Option<CameraOrthographic>,
     pub perspective: Option<CameraPerspective>,
@@ -304,6 +347,7 @@ pub struct Camera {
 
 /// <https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#reference-camera-perspective>
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CameraPerspective {
     pub aspect_ratio: Option<f32>,
     pub yfov: f32,
@@ -315,6 +359,7 @@ pub struct CameraPerspective {
 
 /// <https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#reference-camera-orthographic>
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CameraOrthographic {
     pub xmag: f32,
     pub ymag: f32,
@@ -326,6 +371,7 @@ pub struct CameraOrthographic {
 
 /// <https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#reference-bufferview>
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct BufferView {
     pub buffer: usize,
     #[serde(default)]
@@ -340,6 +386,7 @@ pub struct BufferView {
 
 /// <https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#reference-buffer>
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Buffer {
     pub uri: Option<String>,
     pub byte_length: usize,
@@ -350,6 +397,7 @@ pub struct Buffer {
 
 /// <https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#reference-accessor>
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Accessor {
     pub buffer_view: Option<usize>,
     #[serde(default)]
@@ -359,9 +407,11 @@ pub struct Accessor {
     pub normalized: bool,
     pub count: usize,
     pub r#type: String,
-    pub max: Option<usize>,
-    pub min: Option<usize>,
-    pub sparse: AccessorSparse,
+    #[serde(default)]
+    pub max: Vec<f32>,
+    #[serde(default)]
+    pub min: Vec<f32>,
+    pub sparse: Option<AccessorSparse>,
     pub name: Option<String>,
     pub extensions: Option<Extension>,
     pub extras: Option<Extras>,
@@ -369,6 +419,7 @@ pub struct Accessor {
 
 /// <https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#reference-accessor-sparse>
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AccessorSparse {
     pub count: usize,
     pub indices: AccessorSparseIndices,
@@ -379,6 +430,7 @@ pub struct AccessorSparse {
 
 /// <https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#reference-accessor-sparse-indices>
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AccessorSparseIndices {
     pub buffer_view: usize,
     #[serde(default)]
@@ -390,6 +442,7 @@ pub struct AccessorSparseIndices {
 
 /// <https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#reference-accessor-sparse-values>
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AccessorSparseValues {
     pub buffer_view: usize,
     #[serde(default)]
@@ -402,7 +455,7 @@ pub struct AccessorSparseValues {
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Asset {
     pub copyright: Option<String>,
-    pub generation: Option<String>,
+    pub generator: Option<String>,
     pub version: String,
     pub min_version: Option<String>,
     pub extensions: Option<Extension>,
