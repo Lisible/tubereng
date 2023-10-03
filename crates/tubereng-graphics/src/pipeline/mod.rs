@@ -7,7 +7,9 @@ use tubereng_ecs::entity::EntityStore;
 pub mod default_pipeline;
 
 pub trait RenderPipeline {
+    type RenderPipelineSettings: Default;
     fn new(
+        settings: &Self::RenderPipelineSettings,
         device: &wgpu::Device,
         surface_configuration: &wgpu::SurfaceConfiguration,
         texture_cache: &mut TextureCache,

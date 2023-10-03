@@ -17,6 +17,7 @@ use tubereng::{
         geometry::ModelAsset,
         light::PointLight,
         material::MaterialAsset,
+        pipeline::default_pipeline::DefaultRenderPipelineSettings,
     },
     input::{keyboard::Key, InputState},
     math::{quaternion::Quaternion, vector::Vector3f},
@@ -28,6 +29,9 @@ fn main() {
     let engine: Engine = EngineBuilder::new()
         .with_application_title("Basic Application")
         .with_setup_system(setup)
+        .with_render_pipeline_settings(DefaultRenderPipelineSettings {
+            render_debug_grid: true,
+        })
         .build();
     pollster::block_on(WinitTuberRunner::run(engine));
 }

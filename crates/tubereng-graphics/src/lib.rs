@@ -60,7 +60,7 @@ impl<R> Renderer<R>
 where
     R: RenderPipeline,
 {
-    pub async fn new(window: Window) -> Self {
+    pub async fn new(render_pipeline_settings: &R::RenderPipelineSettings, window: Window) -> Self {
         let size = window.inner_size();
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
@@ -97,6 +97,7 @@ where
 
         let mut texture_cache = TextureCache::new();
         let pipeline = R::new(
+            render_pipeline_settings,
             &device,
             &surface_configuration,
             &mut texture_cache,

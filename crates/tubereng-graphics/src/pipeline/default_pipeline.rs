@@ -22,6 +22,7 @@ use super::RenderPipeline;
 const SKY_TOP_COLOR: [f32; 4] = [0.192, 0.302, 0.475, 1.0];
 const SKY_BOTTOM_COLOR: [f32; 4] = [0.324, 0.179, 0.069, 1.0];
 pub struct DefaultRenderPipeline {
+    render_debug_grid: bool,
     material_bind_group_layout: wgpu::BindGroupLayout,
     mesh_uniform_buffer: wgpu::Buffer,
     mesh_bind_group_layout: wgpu::BindGroupLayout,
@@ -284,8 +285,15 @@ impl DefaultRenderPipeline {
     }
 }
 
+#[derive(Default)]
+pub struct DefaultRenderPipelineSettings {
+    pub render_debug_grid: bool,
+}
+
 impl RenderPipeline for DefaultRenderPipeline {
+    type RenderPipelineSettings = DefaultRenderPipelineSettings;
     fn new(
+        render_pipeline_settings: &Self::RenderPipelineSettings,
         device: &wgpu::Device,
         surface_configuration: &wgpu::SurfaceConfiguration,
         texture_cache: &mut TextureCache,
@@ -389,6 +397,7 @@ impl RenderPipeline for DefaultRenderPipeline {
             light_storage_buffer,
             light_storage_bind_group_layout,
             light_storage_bind_group,
+            render_debug_grid: render_pipeline_settings.render_debug_grid,
         }
     }
 
@@ -560,36 +569,38 @@ impl RenderPipeline for DefaultRenderPipeline {
                 },
             );
 
-        RenderPass::new("debug_grid", &mut render_graph)
-            .with_no_vertex_buffer()
-            .with_depth_buffer(self.depth_buffer_texture_handle, false)
-            .with_blend_state(wgpu::BlendState {
-                color: wgpu::BlendComponent {
-                    src_factor: wgpu::BlendFactor::SrcAlpha,
-                    dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-                    operation: wgpu::BlendOperation::Add,
-                },
-                alpha: wgpu::BlendComponent::default(),
-            })
-            .with_shader("debug_grid")
-            .with_render_target(render_target)
-            .with_bind_group(&self.camera_bind_group_layout, &self.camera_bind_group)
-            .with_bind_group(
-                &self.inverse_camera_bind_group_layout,
-                &self.inverse_camera_bind_group,
-            )
-            .dispatch(
-                |rpass,
-                 bind_groups,
-                 _vertex_buffers,
-                 _index_buffers,
-                 _draw_commands,
-                 _material_cache| {
-                    rpass.set_bind_group(0, bind_groups[0], &[]);
-                    rpass.set_bind_group(1, bind_groups[1], &[]);
-                    rpass.draw(0..6, 0..1);
-                },
-            );
+        if self.render_debug_grid {
+            RenderPass::new("debug_grid", &mut render_graph)
+                .with_no_vertex_buffer()
+                .with_depth_buffer(self.depth_buffer_texture_handle, false)
+                .with_blend_state(wgpu::BlendState {
+                    color: wgpu::BlendComponent {
+                        src_factor: wgpu::BlendFactor::SrcAlpha,
+                        dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                        operation: wgpu::BlendOperation::Add,
+                    },
+                    alpha: wgpu::BlendComponent::default(),
+                })
+                .with_shader("debug_grid")
+                .with_render_target(render_target)
+                .with_bind_group(&self.camera_bind_group_layout, &self.camera_bind_group)
+                .with_bind_group(
+                    &self.inverse_camera_bind_group_layout,
+                    &self.inverse_camera_bind_group,
+                )
+                .dispatch(
+                    |rpass,
+                     bind_groups,
+                     _vertex_buffers,
+                     _index_buffers,
+                     _draw_commands,
+                     _material_cache| {
+                        rpass.set_bind_group(0, bind_groups[0], &[]);
+                        rpass.set_bind_group(1, bind_groups[1], &[]);
+                        rpass.draw(0..6, 0..1);
+                    },
+                );
+        }
 
         render_graph.execute(command_encoder, ctx);
 

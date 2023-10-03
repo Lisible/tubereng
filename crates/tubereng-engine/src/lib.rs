@@ -21,6 +21,7 @@ where
     application_title: &'static str,
     ecs: Ecs,
     renderer: Option<Renderer<R>>,
+    render_pipeline_settings: R::RenderPipelineSettings,
 }
 
 impl<R> Engine<R>
@@ -86,6 +87,10 @@ where
             .expect("The renderer is uninitialized")
             .resize(new_size);
     }
+
+    pub fn render_pipeline_settings(&self) -> &R::RenderPipelineSettings {
+        &self.render_pipeline_settings
+    }
 }
 
 pub struct EngineBuilder<R = DefaultRenderPipeline>
@@ -94,6 +99,7 @@ where
 {
     application_title: Option<&'static str>,
     setup_system: Option<Box<dyn System>>,
+    render_pipeline_settings: R::RenderPipelineSettings,
     _marker: PhantomData<R>,
 }
 
@@ -106,6 +112,7 @@ where
         Self {
             application_title: None,
             setup_system: None,
+            render_pipeline_settings: R::RenderPipelineSettings::default(),
             _marker: PhantomData,
         }
     }
@@ -127,6 +134,15 @@ where
     }
 
     #[must_use]
+    pub fn with_render_pipeline_settings(
+        mut self,
+        render_pipeline_settings: R::RenderPipelineSettings,
+    ) -> Self {
+        self.render_pipeline_settings = render_pipeline_settings;
+        self
+    }
+
+    #[must_use]
     pub fn build(self) -> Engine<R> {
         let mut ecs = Ecs::new();
         ecs.register_setup_system(self.setup_system.unwrap_or(Box::new(Into::into(|| {}))));
@@ -137,6 +153,7 @@ where
             application_title: self.application_title.unwrap_or("TuberApp"),
             ecs,
             renderer: None,
+            render_pipeline_settings: self.render_pipeline_settings,
         }
     }
 }

@@ -55,7 +55,7 @@ impl WinitTuberRunner {
             engine.application_title()
         );
 
-        let renderer = Renderer::new(window).await;
+        let renderer = Renderer::new(engine.render_pipeline_settings(), window).await;
         engine.initialize_renderer(renderer);
 
         engine.run_setup_system();
