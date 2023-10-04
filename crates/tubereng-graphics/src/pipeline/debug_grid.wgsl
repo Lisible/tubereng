@@ -79,7 +79,7 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
 
     fragment_output.fragment_depth = compute_fragment_depth(fragment_position);
 	let scale = 10.0;
-	// As of 2023-10-24, the derivative cannot be computed in the grid function
+	// As of 2023-10-04, the derivative cannot be computed in the grid function
 	// See: https://github.com/gfx-rs/naga/issues/2524
 	let coordinates = fragment_position.xz * scale;
 	let derivative = fwidth(coordinates);
