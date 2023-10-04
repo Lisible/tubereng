@@ -51,9 +51,7 @@ struct FragmentOutput {
 }
 
 // based on https://asliceofrendering.com/scene%20helper/2020/01/05/InfiniteGrid/
-fn grid(fragment_position: vec3<f32>, scale: f32) -> vec4<f32> {
-	let coordinates = fragment_position.xz * scale;
-	let derivative = fwidth(coordinates);
+fn grid(fragment_position: vec3<f32>, scale: f32, coordinates: vec2<f32>, derivative: vec2<f32>) -> vec4<f32> {
 	let grid = abs(fract(coordinates - 0.5) - 0.5) / derivative;
 	let line = min(grid.x, grid.y);
 	let minimum_z = min(derivative.y, 1.0);
@@ -78,7 +76,13 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
 	var fragment_output: FragmentOutput;
 	let t = -in.near_point.y / (in.far_point.y - in.near_point.y);
 	let fragment_position = in.near_point + t * (in.far_point - in.near_point);
+
     fragment_output.fragment_depth = compute_fragment_depth(fragment_position);
-    fragment_output.fragment_color = grid(fragment_position, 10.0) * f32(t > 0.0);
+	let scale = 10.0;
+	// As of 2023-10-24, the derivative cannot be computed in the grid function
+	// See: https://github.com/gfx-rs/naga/issues/2524
+	let coordinates = fragment_position.xz * scale;
+	let derivative = fwidth(coordinates);
+    fragment_output.fragment_color = grid(fragment_position, scale, coordinates, derivative) * f32(t > 0.0);
 	return fragment_output;
 }
