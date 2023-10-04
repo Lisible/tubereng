@@ -1,7 +1,108 @@
 #![warn(clippy::pedantic)]
 
+use std::{io::Read, mem::MaybeUninit};
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JSONValue;
+
+#[derive(Debug)]
+pub enum GltfError {
+    GlbCannotFitHeader,
+    GlbHeaderParseError(std::io::Error),
+    GlbChunkParseError(std::io::Error),
+    GlbInvalidMagicNumber,
+    GlbWrongChunkType,
+    GlbInvalidUtf8Data(std::string::FromUtf8Error),
+    GlbInvalidGltfJson(serde_json::Error),
+}
+
+#[derive(Debug)]
+pub struct Glb {
+    header: GlbHeader,
+    gltf: Gltf,
+}
+
+impl TryFrom<&[u8]> for Glb {
+    type Error = GltfError;
+
+    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+        GlbParser::parse(value)
+    }
+}
+
+struct GlbParser;
+impl GlbParser {
+    const MAGIC_NUMBER: u32 = 0x4654_6C67;
+    const HEADER_SIZE: usize = 12;
+    const CHUNK_TYPE_JSON: u32 = 0x4E4F_534A;
+    const CHUNK_TYPE_BIN: u32 = 0x004E_4942;
+
+    pub fn parse<R>(mut read: R) -> Result<Glb, GltfError>
+    where
+        R: Read,
+    {
+        let header = Self::parse_header(&mut read)?;
+        let gltf = Self::parse_gltf_json_chunk(&mut read)?;
+
+        Ok(Glb { header, gltf })
+    }
+
+    fn parse_header<R>(mut reader: &mut R) -> Result<GlbHeader, GltfError>
+    where
+        R: Read,
+    {
+        let magic_number = read_next_u32(&mut reader).map_err(GltfError::GlbHeaderParseError)?;
+        if magic_number != Self::MAGIC_NUMBER {
+            return Err(GltfError::GlbInvalidMagicNumber);
+        }
+        let version = read_next_u32(&mut reader).map_err(GltfError::GlbHeaderParseError)?;
+        let length = read_next_u32(&mut reader).map_err(GltfError::GlbHeaderParseError)?;
+        Ok(GlbHeader { version, length })
+    }
+
+    fn parse_gltf_json_chunk<R>(mut read: &mut R) -> Result<Gltf, GltfError>
+    where
+        R: Read,
+    {
+        let chunk_length = read_next_u32(&mut read).map_err(GltfError::GlbChunkParseError)?;
+        let chunk_type = read_next_u32(&mut read).map_err(GltfError::GlbChunkParseError)?;
+        if chunk_type != Self::CHUNK_TYPE_JSON {
+            return Err(GltfError::GlbWrongChunkType);
+        }
+
+        let mut raw_chunk_data = vec![0u8; chunk_length as usize];
+        read.read_exact(&mut raw_chunk_data)
+            .map_err(GltfError::GlbChunkParseError)?;
+        let gltf_string =
+            String::from_utf8(raw_chunk_data).map_err(GltfError::GlbInvalidUtf8Data)?;
+        let gltf: Gltf =
+            serde_json::from_str(&gltf_string).map_err(GltfError::GlbInvalidGltfJson)?;
+
+        Ok(gltf)
+    }
+}
+
+fn read_next_u32<R>(reader: &mut R) -> std::io::Result<u32>
+where
+    R: Read,
+{
+    let mut value = [0u8; 4];
+    reader.read_exact(&mut value)?;
+    Ok(u32::from_le_bytes(value))
+}
+
+#[derive(Debug)]
+pub struct GlbHeader {
+    version: u32,
+    length: u32,
+}
+
+#[derive(Debug)]
+pub struct GlbChunk<'data> {
+    chunk_length: u32,
+    chunk_type: u32,
+    chunk_data: &'data [u8],
+}
 
 /// <https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#reference-gltf>
 #[derive(Debug, Deserialize)]
