@@ -34,6 +34,10 @@ impl WinitTuberRunner {
             .with_title(engine.application_title())
             .build(&event_loop)
             .unwrap();
+        window
+            .set_cursor_grab(winit::window::CursorGrabMode::Confined)
+            .unwrap();
+        window.set_cursor_visible(false);
 
         #[cfg(target_arch = "wasm32")]
         {
