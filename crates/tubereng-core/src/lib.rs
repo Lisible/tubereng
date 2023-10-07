@@ -2,6 +2,8 @@
 
 use tubereng_math::{matrix::Matrix4f, quaternion::Quaternion, vector::Vector3f};
 
+pub struct DeltaTime(pub f32);
+
 #[derive(Debug, Clone)]
 pub struct Transform {
     pub translation: Vector3f,

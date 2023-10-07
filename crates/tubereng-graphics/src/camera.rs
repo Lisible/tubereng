@@ -1,4 +1,4 @@
-use tubereng_core::Transform;
+use tubereng_core::{DeltaTime, Transform};
 use tubereng_ecs::{
     query::Q,
     system::{Res, SystemSet},
@@ -95,12 +95,14 @@ fn rotate_camera(
 fn move_camera(
     camera_query: Q<(&ActiveCamera, &FlyCamera, &mut Transform)>,
     input: Res<InputState>,
+    delta_time: Res<DeltaTime>,
 ) {
     let input = input.0;
+    let delta_time = delta_time.0 .0;
 
-    let mut camera_speed = 0.01;
+    let mut camera_speed = 1.0;
     if input.keyboard.is_key_down(Key::LShift) {
-        camera_speed = 0.1;
+        camera_speed = 5.0;
     }
 
     let (_, _, mut transform) = camera_query
@@ -120,22 +122,22 @@ fn move_camera(
         .apply_to_vector(&Vector3f::new(1.0, 0.0, 0.0));
 
     if input.keyboard.is_key_down(Key::W) {
-        transform.translation += forward * camera_speed;
+        transform.translation += forward * camera_speed * delta_time;
     }
     if input.keyboard.is_key_down(Key::S) {
-        transform.translation -= forward * camera_speed;
+        transform.translation -= forward * camera_speed * delta_time;
     }
     if input.keyboard.is_key_down(Key::D) {
-        transform.translation += right * camera_speed;
+        transform.translation += right * camera_speed * delta_time;
     }
     if input.keyboard.is_key_down(Key::A) {
-        transform.translation -= right * camera_speed;
+        transform.translation -= right * camera_speed * delta_time;
     }
     if input.keyboard.is_key_down(Key::Space) {
-        transform.translation += up * camera_speed;
+        transform.translation += up * camera_speed * delta_time;
     }
     if input.keyboard.is_key_down(Key::LControl) {
-        transform.translation -= up * camera_speed;
+        transform.translation -= up * camera_speed * delta_time;
     }
 }
 

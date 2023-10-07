@@ -9,6 +9,7 @@ use tubereng_ecs::{
     system::{Into, System, SystemFn},
     Ecs,
 };
+use tubereng_core::DeltaTime;
 use tubereng_graphics::{
     pipeline::{default_pipeline::DefaultRenderPipeline, RenderPipeline},
     Renderer, WindowSize,
@@ -45,7 +46,8 @@ where
         self.ecs.run_setup_system();
     }
 
-    pub fn update(&mut self) {
+    pub fn update(&mut self, delta_time: f32) { 
+        self.update_delta_time_resource(delta_time);
         self.ecs.run_systems();
         self.ecs.execute_pending_commands();
 
@@ -53,6 +55,11 @@ where
         for _ in Self::event_iter::<ExitRequest>(&pending_events) {
             self.exit();
         }
+    }
+
+    fn update_delta_time_resource(&mut self, delta_time: f32) {
+        let mut delta_time_resource = self.ecs.resource_mut::<DeltaTime>().expect("No DeltaTime resource found in Ecs");
+        delta_time_resource.0 = delta_time;
     }
 
     // TODO: Change this
@@ -175,6 +182,7 @@ where
         ecs.register_setup_system(self.setup_system.unwrap_or(Box::new(Into::into(|| {}))));
         ecs.insert_resource(AssetStore::<FS>::new());
         ecs.insert_resource(InputState::new());
+        ecs.insert_resource(DeltaTime(0.0));
 
         Engine {
             application_title: self.application_title.unwrap_or("TuberApp"),

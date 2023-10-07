@@ -1,5 +1,7 @@
 #![warn(clippy::pedantic)]
 
+use std::time::Instant;
+
 use log::info;
 use tubereng_engine::Engine;
 use tubereng_graphics::{pipeline::RenderPipeline, Renderer, WindowSize};
@@ -61,6 +63,7 @@ impl WinitTuberRunner {
         engine.run_setup_system();
 
         info!("Starting main loop...");
+        let mut last_frame_start_instant = Instant::now();
         event_loop.run(move |event, _, control_flow| {
             control_flow.set_poll();
             match event {
@@ -81,13 +84,16 @@ impl WinitTuberRunner {
                     engine.resize(WindowSize::new(new_inner_size.width, new_inner_size.height));
                 }
                 Event::MainEventsCleared => {
+                    let frame_start_instant = Instant::now();
+                    let delta_time = (frame_start_instant - last_frame_start_instant).as_secs_f32();
                     if engine.should_exit() {
                         control_flow.set_exit();
                     }
 
-                    engine.update();
+                    engine.update(delta_time);
                     engine.render();
                     engine.clear_last_frame_inputs();
+                    last_frame_start_instant = frame_start_instant;
                 }
                 Event::DeviceEvent {
                     event: DeviceEvent::MouseMotion { delta },

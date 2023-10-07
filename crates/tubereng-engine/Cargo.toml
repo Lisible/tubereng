@@ -10,4 +10,5 @@ tubereng-assets = { path = "../tubereng-assets" }
 tubereng-ecs = { path = "../tubereng-ecs" }
 tubereng-graphics = { path = "../tubereng-graphics" }
 tubereng-input = { path = "../tubereng-input" }
+tubereng-core = { path = "../tubereng-core" }
 log = "0.4"
