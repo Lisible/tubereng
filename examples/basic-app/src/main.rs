@@ -8,10 +8,11 @@ use tubereng::{
     core::Transform,
     ecs::{
         commands::CommandBuffer,
+        event::EventWriter,
         query::Q,
         system::{Res, ResMut},
     },
-    engine::{Engine, EngineBuilder},
+    engine::{Engine, EngineBuilder, ExitRequest},
     graphics::{
         camera::{ActiveCamera, Camera, FlyCamera},
         geometry::ModelAsset,
@@ -81,6 +82,14 @@ fn setup(command_buffer: &CommandBuffer, asset_store: ResMut<AssetStore>) {
         material: light_material,
     });
     command_buffer.register_system(spawn_light_at_camera_position);
+    command_buffer.register_system(exit);
+}
+
+fn exit(exit_request_writer: EventWriter<ExitRequest>, input: Res<InputState>) {
+    let Res(input) = input;
+    if input.keyboard.is_key_down(Key::Escape) {
+        exit_request_writer.write(ExitRequest);
+    }
 }
 
 fn spawn_light_at_camera_position(

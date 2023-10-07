@@ -1,6 +1,6 @@
 #![warn(clippy::pedantic)]
 
-use std::{cell::RefMut, marker::PhantomData};
+use std::{cell::RefMut, marker::PhantomData, any::{Any, TypeId}};
 use tubereng_input::{Input, InputState};
 
 use log::{debug, info};
@@ -22,7 +22,10 @@ where
     ecs: Ecs,
     renderer: Option<Renderer<R>>,
     render_pipeline_settings: R::RenderPipelineSettings,
+    should_exit: bool,
 }
+
+pub struct ExitRequest;
 
 impl<R> Engine<R>
 where
@@ -45,6 +48,22 @@ where
     pub fn update(&mut self) {
         self.ecs.run_systems();
         self.ecs.execute_pending_commands();
+
+        let pending_events = self.ecs.event_queue_mut().drain(..).collect::<Vec<_>>();
+        for _ in Self::event_iter::<ExitRequest>(&pending_events) {
+            self.exit();
+        }
+    }
+
+    // TODO: Change this
+    fn event_iter<E>(pending_events: &[Box<dyn Any>]) -> impl Iterator<Item = &E> where E: 'static {
+        pending_events
+            .iter()
+            .filter(|e| (***e).type_id() == TypeId::of::<E>())
+            .map(|e| 
+                // SAFETY: We filtered items with the type id of E
+                // so they can only be E instances
+                unsafe { e.downcast_ref::<E>().unwrap_unchecked() })
     }
 
     fn input_state(&mut self) -> RefMut<InputState> {
@@ -90,6 +109,14 @@ where
 
     pub fn render_pipeline_settings(&self) -> &R::RenderPipelineSettings {
         &self.render_pipeline_settings
+    }
+
+    pub fn should_exit(&self) -> bool {
+        self.should_exit
+    }
+
+    pub fn exit(&mut self) {
+        self.should_exit = true;
     }
 }
 
@@ -154,6 +181,7 @@ where
             ecs,
             renderer: None,
             render_pipeline_settings: self.render_pipeline_settings,
+            should_exit: false,
         }
     }
 }

@@ -2,6 +2,7 @@
 #![allow(clippy::module_name_repetitions)]
 
 use entity::EntityStore;
+use event::EventQueue;
 use log::{info, trace};
 use resource::Resources;
 use std::{
@@ -15,6 +16,7 @@ use commands::CommandBuffer;
 
 pub mod commands;
 pub mod entity;
+pub mod event;
 pub mod query;
 pub mod resource;
 pub mod system;
@@ -26,6 +28,7 @@ pub struct Ecs {
     pending_commands: CommandBuffer,
     setup_system: Option<Box<dyn System>>,
     system_sets: Vec<SystemSet>,
+    event_queue: EventQueue,
     resources: Resources,
 }
 impl Ecs {
@@ -37,6 +40,7 @@ impl Ecs {
             setup_system: None,
             system_sets: vec![],
             resources: Resources::new(),
+            event_queue: EventQueue::new(),
         }
     }
 
@@ -62,18 +66,21 @@ impl Ecs {
                 command_buffer: &self.pending_commands,
                 entity_store: &self.entity_store,
                 resources: &self.resources,
+                event_queue: &self.event_queue,
             };
             setup_system.execute(&ctx);
         }
     }
 
     pub fn run_systems(&mut self) {
+        self.event_queue.swap_and_clear();
         for system_set in &mut self.system_sets {
             for system in system_set.iter_mut() {
                 let ctx = ExecutionContext {
                     command_buffer: &self.pending_commands,
                     entity_store: &self.entity_store,
                     resources: &self.resources,
+                    event_queue: &self.event_queue,
                 };
                 system.execute(&ctx);
             }
@@ -122,6 +129,13 @@ impl Ecs {
             command.apply(self);
         }
     }
+
+    #[must_use]
+    pub fn event_queue_mut<'a>(
+        &'a mut self,
+    ) -> RefMut<'a, Vec<Box<(dyn std::any::Any + 'static)>>> {
+        self.event_queue.pending_events_mut()
+    }
 }
 
 impl Default for Ecs {
@@ -154,7 +168,10 @@ impl_entity_definition_for_tuples!(F: 5, E: 4, D: 3, C: 2, B: 1, A: 0,);
 #[cfg(test)]
 mod tests {
 
-    use crate::system::ResMut;
+    use crate::{
+        event::{EventReader, EventWriter},
+        system::ResMut,
+    };
 
     use super::*;
 
@@ -193,6 +210,58 @@ mod tests {
         ecs.execute_pending_commands();
         assert_eq!(ecs.pending_commands.len(), 0);
         assert_eq!(ecs.entity_count(), 2);
+    }
+
+    #[test]
+    fn run_system_emitting_event() {
+        struct ExitEvent;
+        let mut ecs = Ecs::new();
+        assert!(ecs.event_queue.is_empty());
+
+        let emit_exit_event = |event_writer: EventWriter<ExitEvent>| {
+            event_writer.write(ExitEvent);
+        };
+
+        let mut system_set = SystemSet::new();
+        system_set.add_system(emit_exit_event);
+        ecs.register_system_set(system_set);
+        ecs.run_systems();
+
+        assert!(!ecs.event_queue.is_empty());
+    }
+
+    #[test]
+    fn run_system_reading_event() {
+        struct EventCount(pub usize);
+        struct AEvent;
+
+        let mut ecs = Ecs::new();
+        ecs.insert_resource(EventCount(0));
+        let write_events = move |event_writer: EventWriter<AEvent>| {
+            event_writer.write(AEvent);
+            event_writer.write(AEvent);
+        };
+
+        let read_events = move |event_reader: EventReader<AEvent>,
+                                event_count: ResMut<EventCount>| {
+            let ResMut(mut event_count) = event_count;
+            event_count.0 += event_reader.iter().count();
+        };
+
+        let mut system_set = SystemSet::new();
+        system_set.add_system(write_events);
+        system_set.add_system(read_events);
+        ecs.register_system_set(system_set);
+        ecs.run_systems();
+        {
+            let event_count = ecs.resource::<EventCount>().unwrap();
+            let event_count = event_count.0;
+            assert_eq!(event_count, 0);
+        }
+        ecs.run_systems();
+        let event_count = ecs.resource::<EventCount>().unwrap();
+        let event_count = event_count.0;
+        assert_eq!(event_count, 2);
     }
 
     #[test]

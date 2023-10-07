@@ -67,9 +67,7 @@ impl WinitTuberRunner {
                 Event::WindowEvent {
                     event: WindowEvent::CloseRequested,
                     ..
-                } => {
-                    control_flow.set_exit();
-                }
+                } => engine.exit(),
                 Event::WindowEvent {
                     event: WindowEvent::Resized(size),
                     ..
@@ -83,6 +81,10 @@ impl WinitTuberRunner {
                     engine.resize(WindowSize::new(new_inner_size.width, new_inner_size.height));
                 }
                 Event::MainEventsCleared => {
+                    if engine.should_exit() {
+                        control_flow.set_exit();
+                    }
+
                     engine.update();
                     engine.render();
                     engine.clear_last_frame_inputs();

@@ -7,6 +7,7 @@ use std::{
 use crate::{
     commands::CommandBuffer,
     entity::EntityStore,
+    event::{EventQueue, EventReader, EventWriter},
     query::{Query, Q},
     resource::Resources,
 };
@@ -44,6 +45,7 @@ pub struct ExecutionContext<'a> {
     pub(crate) command_buffer: &'a CommandBuffer,
     pub(crate) entity_store: &'a EntityStore,
     pub(crate) resources: &'a Resources,
+    pub(crate) event_queue: &'a EventQueue,
 }
 
 pub trait System {
@@ -224,6 +226,27 @@ where
 
     fn fetch<'a>(execution_context: &'a ExecutionContext<'a>) -> Self::Item<'a> {
         Q::new(execution_context.entity_store)
+    }
+}
+
+impl<'q, E> Parameter for EventWriter<'q, E>
+where
+    E: 'static,
+{
+    type Item<'a> = EventWriter<'a, E>;
+
+    fn fetch<'a>(execution_context: &'a ExecutionContext<'a>) -> Self::Item<'a> {
+        EventWriter::new(execution_context.event_queue)
+    }
+}
+impl<'q, E> Parameter for EventReader<'q, E>
+where
+    E: 'static,
+{
+    type Item<'a> = EventReader<'a, E>;
+
+    fn fetch<'a>(execution_context: &'a ExecutionContext<'a>) -> Self::Item<'a> {
+        EventReader::new(execution_context.event_queue.pending_events())
     }
 }
 
