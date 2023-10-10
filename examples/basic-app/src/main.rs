@@ -111,21 +111,25 @@ fn create_grid_mesh(width: usize, height: usize) -> MeshAsset {
             let j = j as f32;
             vertices.push(Vertex {
                 position: [i, j.sin() / 10.0, j],
+                color: [1.0, 1.0, 1.0],
                 normal: [0.0, 1.0, 0.0],
                 texture_coordinates: [0.0, 0.0],
             });
             vertices.push(Vertex {
                 position: [i, (j + 1.0).sin() / 10.0, j + 1.0],
+                color: [1.0, 1.0, 1.0],
                 normal: [0.0, 1.0, 0.0],
                 texture_coordinates: [0.0, 1.0],
             });
             vertices.push(Vertex {
                 position: [i + 1.0, (j + 1.0).sin() / 10.0, j + 1.0],
+                color: [1.0, 1.0, 1.0],
                 normal: [0.0, 1.0, 0.0],
                 texture_coordinates: [1.0, 1.0],
             });
             vertices.push(Vertex {
                 position: [i + 1.0, j.sin() / 10.0, j],
+                color: [1.0, 1.0, 1.0],
                 normal: [0.0, 1.0, 0.0],
                 texture_coordinates: [1.0, 0.0],
             });

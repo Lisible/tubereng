@@ -39,15 +39,17 @@ var<storage, read> light_storage: LightStorage;
 
 struct VertexInput {
     @location(0) position: vec3<f32>,
-    @location(1) normal: vec3<f32>,
-    @location(2) texture_coordinates: vec2<f32>
+    @location(1) color: vec3<f32>,
+    @location(2) normal: vec3<f32>,
+    @location(3) texture_coordinates: vec2<f32>
 }
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
     @location(1) fragment_position: vec3<f32>,
-    @location(2) normal: vec3<f32>,
-    @location(3) texture_coordinates: vec2<f32>
+    @location(2) color: vec3<f32>,
+    @location(3) normal: vec3<f32>,
+    @location(4) texture_coordinates: vec2<f32>
 }
 
 @vertex
@@ -59,6 +61,7 @@ fn vs_main(
     out.clip_position = camera.view_projection_matrix * vec4<f32>(out.fragment_position, 1.0);
     out.normal = ((transpose(mesh_uniform.inverse_world_transform)) * vec4<f32>(model.normal, 1.0)).xyz;
     out.texture_coordinates = model.texture_coordinates;
+    out.color = model.color;
     return out;
 }
 
@@ -66,7 +69,7 @@ fn vs_main(
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let normalized_normal = normalize(in.normal);
     let view_direction = normalize(camera.position - in.fragment_position);
-    let texture_sample = textureSample(t_diffuse, t_sampler, in.texture_coordinates);
+    let texture_sample = vec4<f32>(in.color.xyz, 1.0) * textureSample(t_diffuse, t_sampler, in.texture_coordinates);
     var result = light_storage.ambient_light_factor * texture_sample.xyz;
     for(var i: u32 = 0u; i < light_storage.point_light_count; i++) {
         result += compute_point_light(light_storage.point_lights[i], normalized_normal.xyz, in.fragment_position, view_direction, texture_sample.xyz);

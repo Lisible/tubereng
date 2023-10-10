@@ -46,6 +46,7 @@ impl AssetLoader<MeshAsset> for MeshAssetLoader {
 
                 vertices.push(Vertex {
                     position: [pos.x, pos.y, pos.z],
+                    color: [1.0, 1.0, 1.0],
                     normal,
                     texture_coordinates,
                 });
@@ -154,13 +155,14 @@ pub struct Mesh {
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Vertex {
     pub position: [f32; 3],
+    pub color: [f32; 3],
     pub normal: [f32; 3],
     pub texture_coordinates: [f32; 2],
 }
 
 impl Vertex {
-    const ATTRIBUTES: [wgpu::VertexAttribute; 3] =
-        wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x2];
+    const ATTRIBUTES: [wgpu::VertexAttribute; 4] =
+        wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x3, 3 => Float32x2 ];
 
     #[must_use]
     pub fn buffer_layout() -> wgpu::VertexBufferLayout<'static> {
