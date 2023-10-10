@@ -1,7 +1,7 @@
 use crate::{
     camera::{ActiveCamera, Camera, OPENGL_TO_WGPU_MATRIX},
     color::srgb_perceived_lightness,
-    geometry::ModelAsset,
+    geometry::MeshAsset,
     material::MaterialAsset,
     render_graph::{RenderGraph, RenderPass},
     texture::{DepthBufferTextureHandle, TextureCache},
@@ -433,8 +433,8 @@ impl RenderPipeline for DefaultRenderPipeline {
             bytemuck::cast_slice(&[self.inverse_camera_uniform]),
         );
 
-        for (i, (model, material, transform)) in Q::<(
-            &AssetHandle<ModelAsset>,
+        for (i, (mesh, material, transform)) in Q::<(
+            &AssetHandle<MeshAsset>,
             &AssetHandle<MaterialAsset>,
             &Transform,
         )>::new(entity_store)
@@ -453,26 +453,27 @@ impl RenderPipeline for DefaultRenderPipeline {
                 )?;
             }
 
-            let model_handle = *model;
-            if !ctx.model_cache.has(model_handle) {
+            let mesh_handle = *mesh;
+            if !ctx.model_cache.has(mesh_handle) {
                 ctx.model_cache.load(
-                    model_handle,
+                    mesh_handle,
                     asset_store,
                     &mut ctx.vertex_buffers,
-                    &ctx.index_buffers,
+                    &mut ctx.index_buffers,
                     &ctx.device,
                 )?;
             }
 
             let model = ctx
                 .model_cache
-                .get(model_handle)
+                .get(mesh_handle)
                 .expect("Model not found in cache");
             for mesh in &model.meshes {
                 ctx.draw_commands.push(DrawCommand {
                     vertex_buffer: mesh.vertex_buffer,
                     index_buffer: mesh.index_buffer,
                     element_count: mesh.element_count,
+                    vertex_count: mesh.vertex_count,
                     material_handle,
                 });
 
@@ -563,7 +564,7 @@ impl RenderPipeline for DefaultRenderPipeline {
                         if draw_command.index_buffer.is_some() {
                             rpass.draw_indexed(0..draw_command.element_count, 0, 0..1);
                         } else {
-                            rpass.draw(0..draw_command.element_count, 0..1);
+                            rpass.draw(0..draw_command.vertex_count, 0..1);
                         }
                     }
                 },

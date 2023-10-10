@@ -236,6 +236,7 @@ pub struct DrawCommand {
     pub vertex_buffer: usize,
     pub index_buffer: Option<usize>,
     pub element_count: u32,
+    pub vertex_count: u32,
     pub material_handle: AssetHandle<MaterialAsset>,
 }
 

@@ -4,23 +4,23 @@ use tubereng_obj::OBJParser;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 
 #[derive(Debug)]
-pub struct ModelAsset {
-    mesh_descriptions: Vec<MeshDescription>,
+pub struct MeshAsset {
+    pub mesh_description: MeshDescription,
 }
 
 #[derive(Debug)]
 pub struct MeshDescription {
-    vertices: Vec<Vertex>,
-    _indices: Option<Vec<usize>>,
+    pub vertices: Vec<Vertex>,
+    pub indices: Option<Vec<u16>>,
 }
 
-impl Asset for ModelAsset {
-    type Loader = ModelAssetLoader;
+impl Asset for MeshAsset {
+    type Loader = MeshAssetLoader;
 }
 
-pub struct ModelAssetLoader;
-impl AssetLoader<ModelAsset> for ModelAssetLoader {
-    fn load(file_content: &[u8]) -> tubereng_assets::Result<ModelAsset> {
+pub struct MeshAssetLoader;
+impl AssetLoader<MeshAsset> for MeshAssetLoader {
+    fn load(file_content: &[u8]) -> tubereng_assets::Result<MeshAsset> {
         let file_content = String::from_utf8_lossy(file_content);
         let obj_model = OBJParser::parse(file_content).unwrap();
 
@@ -52,11 +52,11 @@ impl AssetLoader<ModelAsset> for ModelAssetLoader {
             }
         }
 
-        Ok(ModelAsset {
-            mesh_descriptions: vec![MeshDescription {
+        Ok(MeshAsset {
+            mesh_description: MeshDescription {
                 vertices,
-                _indices: None,
-            }],
+                indices: None,
+            },
         })
     }
 }
@@ -75,12 +75,12 @@ impl ModelCache {
     }
 
     #[must_use]
-    pub fn has(&self, handle: AssetHandle<ModelAsset>) -> bool {
+    pub fn has(&self, handle: AssetHandle<MeshAsset>) -> bool {
         self.models[handle.id()].is_some()
     }
 
     #[must_use]
-    pub fn get(&self, handle: AssetHandle<ModelAsset>) -> Option<&Model> {
+    pub fn get(&self, handle: AssetHandle<MeshAsset>) -> Option<&Model> {
         self.models[handle.id()].as_ref()
     }
 
@@ -88,35 +88,47 @@ impl ModelCache {
     /// Mau fail if the model asset is not found in the asset store
     pub fn load(
         &mut self,
-        model_asset_handle: AssetHandle<ModelAsset>,
+        mesh_asset_handle: AssetHandle<MeshAsset>,
         asset_store: &mut AssetStore,
         vertex_buffers: &mut Vec<wgpu::Buffer>,
-        _index_buffers: &[wgpu::Buffer],
+        index_buffers: &mut Vec<wgpu::Buffer>,
         device: &wgpu::Device,
     ) -> Result<()> {
-        let model_asset = asset_store
-            .get(model_asset_handle)
+        let mesh_asset = asset_store
+            .get(mesh_asset_handle)
             .ok_or(GraphicsError::ModelAssetNotFound)?;
 
         let mut meshes = vec![];
-        for mesh_description in &model_asset.mesh_descriptions {
-            vertex_buffers.push(device.create_buffer_init(&BufferInitDescriptor {
+
+        vertex_buffers.push(device.create_buffer_init(&BufferInitDescriptor {
+            label: None,
+            contents: bytemuck::cast_slice(&mesh_asset.mesh_description.vertices),
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::VERTEX,
+        }));
+        let vertex_buffer = vertex_buffers.len() - 1;
+        let mut index_buffer = None;
+        if let Some(mesh_indices) = &mesh_asset.mesh_description.indices {
+            index_buffers.push(device.create_buffer_init(&BufferInitDescriptor {
                 label: None,
-                contents: bytemuck::cast_slice(&mesh_description.vertices),
-                usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::VERTEX,
+                contents: bytemuck::cast_slice(mesh_indices),
+                usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::INDEX,
             }));
-
-            let vertex_buffer = vertex_buffers.len() - 1;
-
-            meshes.push(Mesh {
-                vertex_buffer,
-                index_buffer: None,
-                element_count: u32::try_from(mesh_description.vertices.len())
-                    .map_err(|_| GraphicsError::InvalidMesh)?,
-            });
+            index_buffer = Some(index_buffers.len() - 1);
         }
 
-        self.models[model_asset_handle.id()] = Some(Model { meshes });
+        meshes.push(Mesh {
+            vertex_buffer,
+            index_buffer,
+            vertex_count: u32::try_from(mesh_asset.mesh_description.vertices.len())
+                .map_err(|_| GraphicsError::InvalidMesh)?,
+            element_count: if let Some(indices) = &mesh_asset.mesh_description.indices {
+                u32::try_from(indices.len()).map_err(|_| GraphicsError::InvalidMesh)?
+            } else {
+                0
+            },
+        });
+
+        self.models[mesh_asset_handle.id()] = Some(Model { meshes });
         Ok(())
     }
 }
@@ -134,15 +146,16 @@ pub struct Model {
 pub struct Mesh {
     pub vertex_buffer: usize,
     pub index_buffer: Option<usize>,
+    pub vertex_count: u32,
     pub element_count: u32,
 }
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Vertex {
-    position: [f32; 3],
-    normal: [f32; 3],
-    texture_coordinates: [f32; 2],
+    pub position: [f32; 3],
+    pub normal: [f32; 3],
+    pub texture_coordinates: [f32; 2],
 }
 
 impl Vertex {

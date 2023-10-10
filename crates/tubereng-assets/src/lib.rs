@@ -103,9 +103,16 @@ where
                 .ok_or(AssetError::AssetPathIsInvalidUTF8)?,
         )?;
         let asset = A::Loader::load(&bytes)?;
+        Ok(self.store(asset))
+    }
+
+    pub fn store<A>(&mut self, asset: A) -> AssetHandle<A>
+    where
+        A: 'static + Asset,
+    {
         let asset_id = self.assets.len();
         self.assets.push(Box::new(asset));
-        Ok(AssetHandle::new(asset_id))
+        AssetHandle::new(asset_id)
     }
 
     #[must_use]
