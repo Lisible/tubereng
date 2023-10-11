@@ -15,7 +15,7 @@ use tubereng::{
         camera::{ActiveCamera, Camera, FlyCamera},
         geometry::{MeshAsset, MeshDescription, Vertex},
         light::PointLight,
-        material::MaterialAsset,
+        material::{MaterialAsset, PbrMaterialAsset, ShaderMaterialAsset},
         pipeline::default_pipeline::DefaultRenderPipelineSettings,
     },
     input::{keyboard::Key, InputState},
@@ -54,6 +54,10 @@ fn setup(command_buffer: &CommandBuffer, asset_store: ResMut<AssetStore>) {
     let ResMut(mut asset_store) = asset_store;
     let material = asset_store.load::<MaterialAsset>("material.ron").unwrap();
     let material2 = asset_store.load::<MaterialAsset>("material2.ron").unwrap();
+    let material3 =
+        asset_store.store::<MaterialAsset>(MaterialAsset::ShaderMaterial(ShaderMaterialAsset {
+            shader: "custom_shader.wgsl".into(),
+        }));
     let cone_model = asset_store.load::<MeshAsset>("cone.obj").unwrap();
     let cube_model = asset_store.load::<MeshAsset>("cube.obj").unwrap();
     let light_model = asset_store.load::<MeshAsset>("lightbulb.obj").unwrap();
@@ -69,7 +73,7 @@ fn setup(command_buffer: &CommandBuffer, asset_store: ResMut<AssetStore>) {
 
     command_buffer.insert((
         grid_mesh,
-        grass_material,
+        material3,
         Transform {
             translation: Vector3f::new(2.0, 1.0, -2.0),
             ..Default::default()

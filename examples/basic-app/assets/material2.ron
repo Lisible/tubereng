@@ -1,3 +1,5 @@
-MaterialAsset(
-    texture: "texture2.png"
+PbrMaterial(
+    PbrMaterialAsset (
+        texture: "texture2.png"
+    )
 )

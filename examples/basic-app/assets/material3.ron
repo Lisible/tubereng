@@ -1,0 +1,6 @@
+ShaderMaterialAsset(
+    shader: "material3.wgsl",
+    parameters: [
+        ShaderParameter::Time
+    ]
+)

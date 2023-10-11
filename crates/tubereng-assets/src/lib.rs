@@ -1,6 +1,13 @@
 #![warn(clippy::pedantic)]
 
-use std::{any::Any, hash::Hasher, marker::PhantomData, path::PathBuf};
+use std::{
+    any::{Any, TypeId},
+    collections::HashMap,
+    hash::Hasher,
+    marker::PhantomData,
+    path::PathBuf,
+    rc::Rc,
+};
 
 pub type Result<T> = std::result::Result<T, AssetError>;
 
@@ -59,8 +66,27 @@ impl<T: 'static> AssetHandle<T> {
     }
 }
 
+pub struct Assets<T> {
+    assets: Vec<Rc<T>>,
+}
+
+impl<T> Assets<T> {
+    pub fn new() -> Self {
+        Self { assets: vec![] }
+    }
+
+    pub fn get(&self, index: usize) -> Rc<T> {
+        self.assets[index].clone()
+    }
+
+    pub fn store(&mut self, asset: T) -> usize {
+        self.assets.push(Rc::new(asset));
+        self.assets.len() - 1
+    }
+}
+
 pub struct AssetStore<FileSys = FS> {
-    assets: Vec<Box<dyn Any>>,
+    assets: HashMap<TypeId, Box<dyn Any>>,
     _marker: PhantomData<FileSys>,
 }
 impl<FS> AssetStore<FS>
@@ -70,7 +96,7 @@ where
     #[must_use]
     pub fn new() -> Self {
         Self {
-            assets: vec![],
+            assets: HashMap::new(),
             _marker: PhantomData,
         }
     }
@@ -110,14 +136,27 @@ where
     where
         A: 'static + Asset,
     {
-        let asset_id = self.assets.len();
-        self.assets.push(Box::new(asset));
+        let mut assets = self
+            .assets
+            .entry(TypeId::of::<A>())
+            .or_insert(Box::new(Assets::<A>::new()))
+            .downcast_mut::<Assets<A>>()
+            .unwrap();
+
+        let asset_id = assets.store(asset);
         AssetHandle::new(asset_id)
     }
 
     #[must_use]
-    pub fn get<T: 'static>(&self, handle: AssetHandle<T>) -> Option<&T> {
-        self.assets.get(handle.id)?.downcast_ref()
+    pub fn get<T: 'static>(&self, handle: AssetHandle<T>) -> Option<Rc<T>> {
+        Some(
+            self.assets
+                .get(&TypeId::of::<T>())
+                .as_ref()?
+                .downcast_ref::<Assets<T>>()
+                .unwrap()
+                .get(handle.id),
+        )
     }
 }
 

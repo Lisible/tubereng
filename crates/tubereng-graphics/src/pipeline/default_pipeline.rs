@@ -2,12 +2,12 @@ use crate::{
     camera::{ActiveCamera, Camera, OPENGL_TO_WGPU_MATRIX},
     color::srgb_perceived_lightness,
     geometry::MeshAsset,
-    material::MaterialAsset,
+    material::{Material, MaterialAsset, MaterialCache, ShaderMaterial},
     render_graph::{RenderGraph, RenderPass},
+    shader::{ShaderAsset, ShaderCache},
     texture::{DepthBufferTextureHandle, TextureCache},
     DrawCommand, Result,
 };
-use std::collections::HashMap;
 
 use tubereng_assets::{AssetHandle, AssetStore};
 use tubereng_core::Transform;
@@ -44,6 +44,9 @@ pub struct DefaultRenderPipeline {
     light_storage_buffer: wgpu::Buffer,
     light_storage_bind_group_layout: wgpu::BindGroupLayout,
     light_storage_bind_group: wgpu::BindGroup,
+    geometry_shader: Option<AssetHandle<ShaderAsset>>,
+    gradient_sky_shader: Option<AssetHandle<ShaderAsset>>,
+    debug_grid_shader: Option<AssetHandle<ShaderAsset>>,
 }
 
 impl DefaultRenderPipeline {
@@ -235,7 +238,7 @@ impl DefaultRenderPipeline {
     ) {
         RenderPass::new("skybox", render_graph)
             .with_no_vertex_buffer()
-            .with_shader("gradient_sky")
+            .with_shader(self.gradient_sky_shader.unwrap())
             .with_render_target(render_target)
             .with_bind_group(
                 &self.gradient_uniform_bind_group_layout,
@@ -297,10 +300,8 @@ impl RenderPipeline for DefaultRenderPipeline {
         device: &wgpu::Device,
         surface_configuration: &wgpu::SurfaceConfiguration,
         texture_cache: &mut TextureCache,
-        shader_modules: &mut HashMap<String, wgpu::ShaderModule>,
+        shader_cache: &mut ShaderCache,
     ) -> Self {
-        load_shaders(device, shader_modules);
-
         let camera_uniform = CameraUniform::new();
         let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("camera"),
@@ -398,15 +399,49 @@ impl RenderPipeline for DefaultRenderPipeline {
             light_storage_bind_group_layout,
             light_storage_bind_group,
             render_debug_grid: render_pipeline_settings.render_debug_grid,
+            geometry_shader: None,
+            gradient_sky_shader: None,
+            debug_grid_shader: None,
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     fn prepare(
         &mut self,
         ctx: &mut RenderingContext,
         entity_store: &EntityStore,
         asset_store: &mut AssetStore,
     ) -> Result<()> {
+        if self.geometry_shader.is_none() {
+            let geometry_shader_handle = asset_store.store(ShaderAsset {
+                source: include_str!("shader.wgsl").to_string(),
+            });
+            let geometry_shader = asset_store.get(geometry_shader_handle).unwrap();
+            ctx.shader_cache
+                .load(&ctx.device, geometry_shader_handle, geometry_shader);
+            self.geometry_shader = Some(geometry_shader_handle);
+        }
+
+        if self.gradient_sky_shader.is_none() {
+            let gradient_sky_shader_handle = asset_store.store(ShaderAsset {
+                source: include_str!("gradient_sky.wgsl").to_string(),
+            });
+            let gradient_sky_shader = asset_store.get(gradient_sky_shader_handle).unwrap();
+            ctx.shader_cache
+                .load(&ctx.device, gradient_sky_shader_handle, gradient_sky_shader);
+            self.gradient_sky_shader = Some(gradient_sky_shader_handle);
+        }
+
+        if self.debug_grid_shader.is_none() {
+            let debug_grid_shader_handle = asset_store.store(ShaderAsset {
+                source: include_str!("debug_grid.wgsl").to_string(),
+            });
+            let debug_grid_shader = asset_store.get(debug_grid_shader_handle).unwrap();
+            ctx.shader_cache
+                .load(&ctx.device, debug_grid_shader_handle, debug_grid_shader);
+            self.debug_grid_shader = Some(debug_grid_shader_handle);
+        }
+
         let camera_query = Q::<(&ActiveCamera, &Camera, &Transform)>::new(entity_store);
         let (_, camera, camera_transform) = camera_query.iter().next().expect("Camera not found");
         let camera_view_projection_matrix = OPENGL_TO_WGPU_MATRIX
@@ -433,7 +468,7 @@ impl RenderPipeline for DefaultRenderPipeline {
             bytemuck::cast_slice(&[self.inverse_camera_uniform]),
         );
 
-        for (i, (mesh, material, transform)) in Q::<(
+        for (i, (mesh_handle, material_handle, transform)) in Q::<(
             &AssetHandle<MeshAsset>,
             &AssetHandle<MaterialAsset>,
             &Transform,
@@ -441,19 +476,20 @@ impl RenderPipeline for DefaultRenderPipeline {
         .iter()
         .enumerate()
         {
-            let material_handle = *material;
+            let material_handle = *material_handle;
             if !ctx.material_cache.has(material_handle) {
                 ctx.material_cache.load(
                     material_handle,
                     asset_store,
                     &mut ctx.texture_cache,
+                    &mut ctx.shader_cache,
                     &self.material_bind_group_layout,
                     &ctx.device,
                     &ctx.queue,
                 )?;
             }
 
-            let mesh_handle = *mesh;
+            let mesh_handle = *mesh_handle;
             if !ctx.model_cache.has(mesh_handle) {
                 ctx.model_cache.load(
                     mesh_handle,
@@ -504,6 +540,7 @@ impl RenderPipeline for DefaultRenderPipeline {
         Ok(())
     }
 
+    #[allow(clippy::too_many_lines)]
     fn render(
         &mut self,
         command_encoder: &mut wgpu::CommandEncoder,
@@ -515,8 +552,33 @@ impl RenderPipeline for DefaultRenderPipeline {
 
         self.add_skybox_pass(&mut render_graph, render_target);
 
-        RenderPass::new("render_pass", &mut render_graph)
-            .with_shader("shader")
+        for draw_command in &ctx.draw_commands {
+            let material = ctx
+                .material_cache
+                .get(draw_command.material_handle)
+                .unwrap();
+            let Material::ShaderMaterial(ShaderMaterial { shader }) = &material else {
+                continue;
+            };
+
+            RenderPass::new("shader_material_pass", &mut render_graph)
+                .with_shader(*shader)
+                .with_render_target(render_target)
+                .with_no_vertex_buffer()
+                .dispatch(
+                    |rpass,
+                     bind_groups,
+                     vertex_buffers,
+                     index_buffers,
+                     draw_commands,
+                     material_cache| {
+                        rpass.draw(0..3, 0..1);
+                    },
+                );
+        }
+
+        RenderPass::new("pbr_render_pass", &mut render_graph)
+            .with_shader(self.geometry_shader.unwrap())
             .with_depth_buffer(self.depth_buffer_texture_handle, true)
             .with_render_target(render_target)
             .with_bind_group(&self.camera_bind_group_layout, &self.camera_bind_group)
@@ -538,6 +600,14 @@ impl RenderPipeline for DefaultRenderPipeline {
                  draw_commands,
                  material_cache| {
                     for (draw_command_index, draw_command) in draw_commands.iter().enumerate() {
+                        let material = material_cache
+                            .get(draw_command.material_handle)
+                            .expect("Material not found in cache");
+
+                        let Material::PbrMaterial(material) = &material else {
+                            continue;
+                        };
+
                         rpass.set_vertex_buffer(
                             0,
                             vertex_buffers[draw_command.vertex_buffer].slice(..),
@@ -557,9 +627,6 @@ impl RenderPipeline for DefaultRenderPipeline {
                         );
                         rpass.set_bind_group(3, bind_groups[2], &[]);
                         rpass.set_bind_group(4, bind_groups[3], &[]);
-                        let material = material_cache
-                            .get(draw_command.material_handle)
-                            .expect("Material not found in cache");
                         material.bind(2, rpass);
                         if draw_command.index_buffer.is_some() {
                             rpass.draw_indexed(0..draw_command.element_count, 0, 0..1);
@@ -582,7 +649,7 @@ impl RenderPipeline for DefaultRenderPipeline {
                     },
                     alpha: wgpu::BlendComponent::default(),
                 })
-                .with_shader("debug_grid")
+                .with_shader(self.debug_grid_shader.unwrap())
                 .with_render_target(render_target)
                 .with_bind_group(&self.camera_bind_group_layout, &self.camera_bind_group)
                 .with_bind_group(
@@ -607,24 +674,6 @@ impl RenderPipeline for DefaultRenderPipeline {
 
         Ok(())
     }
-}
-
-fn load_shaders(device: &wgpu::Device, shader_modules: &mut HashMap<String, wgpu::ShaderModule>) {
-    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("Shader"),
-        source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
-    });
-    shader_modules.insert("shader".into(), shader);
-    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("Gradient sky shader"),
-        source: wgpu::ShaderSource::Wgsl(include_str!("gradient_sky.wgsl").into()),
-    });
-    shader_modules.insert("gradient_sky".into(), shader);
-    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("Debug grid shader"),
-        source: wgpu::ShaderSource::Wgsl(include_str!("debug_grid.wgsl").into()),
-    });
-    shader_modules.insert("debug_grid".into(), shader);
 }
 
 #[repr(C)]

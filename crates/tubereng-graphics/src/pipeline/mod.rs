@@ -1,5 +1,6 @@
-use crate::{texture::TextureCache, RenderingContext, Result};
-use std::collections::HashMap;
+use crate::{
+    material::MaterialCache, shader::ShaderCache, texture::TextureCache, RenderingContext, Result,
+};
 
 use tubereng_assets::AssetStore;
 use tubereng_ecs::entity::EntityStore;
@@ -13,7 +14,7 @@ pub trait RenderPipeline {
         device: &wgpu::Device,
         surface_configuration: &wgpu::SurfaceConfiguration,
         texture_cache: &mut TextureCache,
-        shader_modules: &mut HashMap<String, wgpu::ShaderModule>,
+        shader_modules: &mut ShaderCache,
     ) -> Self;
     /// Prepares the render
     /// # Errors

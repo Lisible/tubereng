@@ -1,9 +1,12 @@
 use log::debug;
-use std::collections::HashMap;
+use tubereng_assets::AssetHandle;
 
 use crate::{
-    geometry::Vertex, material::MaterialCache, texture::DepthBufferTextureHandle, DrawCommand,
-    RenderingContext,
+    geometry::Vertex,
+    material::MaterialCache,
+    shader::{ShaderAsset, ShaderCache},
+    texture::DepthBufferTextureHandle,
+    DrawCommand, RenderingContext,
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -81,7 +84,7 @@ impl<'layout> RenderGraph<'layout> {
                     &ctx.surface_configuration,
                     render_pass,
                     &ctx.device,
-                    &ctx.shader_modules,
+                    &ctx.shader_cache,
                 );
                 ctx.pipelines
                     .insert(render_pass.identifier.into(), pipeline);
@@ -103,9 +106,10 @@ impl<'layout> RenderGraph<'layout> {
         surface_configuration: &wgpu::SurfaceConfiguration,
         render_pass: &RenderPass,
         device: &wgpu::Device,
-        shader_modules: &HashMap<String, wgpu::ShaderModule>,
+        shader_cache: &ShaderCache,
     ) -> wgpu::RenderPipeline {
-        let shader_module = &shader_modules[render_pass.shader_identifier];
+        let shader = shader_cache.get(render_pass.shader).unwrap();
+        let shader_module = shader.shader_module();
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some(&format!("{}_pipeline_layout", render_pass.identifier)),
             bind_group_layouts: &render_pass.bind_group_layouts,
@@ -187,7 +191,7 @@ type BoxedRenderPassDispatchFn = Box<
 >;
 pub struct RenderPass<'layout> {
     identifier: &'static str,
-    shader_identifier: &'static str,
+    shader: AssetHandle<ShaderAsset>,
     render_targets: Vec<RenderTargetId>,
     dispatch_fn: BoxedRenderPassDispatchFn,
     primitive_topology: wgpu::PrimitiveTopology,
@@ -212,7 +216,7 @@ impl<'layout> RenderPass<'layout> {
 pub struct RenderPassBuilder<'a, 'layout> {
     identifier: &'static str,
     render_graph: &'a mut RenderGraph<'layout>,
-    shader_identifier: Option<&'static str>,
+    shader: Option<AssetHandle<ShaderAsset>>,
     render_targets: Vec<RenderTargetId>,
     primitive_topology: wgpu::PrimitiveTopology,
     bind_group_layouts: Vec<&'layout wgpu::BindGroupLayout>,
@@ -228,7 +232,7 @@ impl<'a, 'layout> RenderPassBuilder<'a, 'layout> {
         Self {
             identifier,
             render_graph,
-            shader_identifier: None,
+            shader: None,
             render_targets: vec![],
             primitive_topology: wgpu::PrimitiveTopology::TriangleList,
             bind_group_layouts: vec![],
@@ -241,8 +245,8 @@ impl<'a, 'layout> RenderPassBuilder<'a, 'layout> {
     }
 
     #[must_use]
-    pub fn with_shader(mut self, shader_identifier: &'static str) -> Self {
-        self.shader_identifier = Some(shader_identifier);
+    pub fn with_shader(mut self, shader: AssetHandle<ShaderAsset>) -> Self {
+        self.shader = Some(shader);
         self
     }
 
@@ -315,7 +319,7 @@ impl<'a, 'layout> RenderPassBuilder<'a, 'layout> {
     {
         self.render_graph.render_passes.push(RenderPass {
             identifier: self.identifier,
-            shader_identifier: self.shader_identifier.expect("Missing shader identifier"),
+            shader: self.shader.expect("Missing shader identifier"),
             render_targets: self.render_targets,
             primitive_topology: self.primitive_topology,
             dispatch_fn: Box::new(dispatch_fn),

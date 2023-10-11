@@ -2,8 +2,9 @@
 #![allow(clippy::module_name_repetitions)]
 
 use geometry::ModelCache;
-use material::{MaterialAsset, MaterialCache};
+use material::{MaterialAsset, MaterialCache, PbrMaterialAsset};
 use pipeline::RenderPipeline;
+use shader::ShaderCache;
 use std::{collections::HashMap, future::Future};
 use texture::TextureCache;
 use tubereng_assets::{AssetHandle, AssetStore};
@@ -22,7 +23,7 @@ pub enum GraphicsError {
 
 #[derive(Debug)]
 pub struct Cube {
-    pub material: AssetHandle<MaterialAsset>,
+    pub material: AssetHandle<PbrMaterialAsset>,
 }
 
 pub mod camera;
@@ -32,6 +33,7 @@ pub mod light;
 pub mod material;
 pub mod pipeline;
 pub mod render_graph;
+pub mod shader;
 pub mod texture;
 
 #[derive(Clone, Copy)]
@@ -90,18 +92,18 @@ where
             view_formats: vec![],
         };
         surface.configure(&device, &surface_configuration);
-        let mut shader_modules = HashMap::new();
         let vertex_buffers = vec![];
         let index_buffers = vec![];
         let material_cache = MaterialCache::new(&device);
 
         let mut texture_cache = TextureCache::new();
+        let mut shader_cache = ShaderCache::new();
         let pipeline = R::new(
             render_pipeline_settings,
             &device,
             &surface_configuration,
             &mut texture_cache,
-            &mut shader_modules,
+            &mut shader_cache,
         );
 
         let rendering_context = RenderingContext {
@@ -117,7 +119,7 @@ where
             surface,
             surface_configuration,
             pipelines: HashMap::new(),
-            shader_modules,
+            shader_cache,
         };
 
         Self {
@@ -253,7 +255,6 @@ pub struct RenderingContext {
     pub surface: wgpu::Surface,
     pub surface_configuration: wgpu::SurfaceConfiguration,
     pub pipelines: HashMap<String, wgpu::RenderPipeline>,
-    pub shader_modules: HashMap<String, wgpu::ShaderModule>,
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
     pub draw_commands: Vec<DrawCommand>,
@@ -262,4 +263,5 @@ pub struct RenderingContext {
     pub texture_cache: TextureCache,
     pub material_cache: MaterialCache,
     pub model_cache: ModelCache,
+    pub shader_cache: ShaderCache,
 }
