@@ -7,5 +7,6 @@ edition = "2021"
 
 [dependencies]
 tubereng = { path = "../.." }
+rand = "0.8"
 env_logger = "0.10"
 pollster = "0.3"

@@ -8,7 +8,7 @@ use tubereng::{
     graphics::{
         camera::{ActiveCamera, Camera, FlyCamera},
         geometry::{MeshAsset, MeshDescription, Vertex},
-        material::PbrMaterialAsset,
+        material::MaterialAsset,
     },
     math::vector::Vector3f,
     winit::WinitTuberRunner,
@@ -38,7 +38,7 @@ fn setup(command_buffer: &CommandBuffer, asset_store: ResMut<AssetStore>) {
 
     let ground_mesh_asset = create_ground_mesh();
     let ground_mesh_asset_handle = asset_store.store(ground_mesh_asset);
-    let material = asset_store.load::<PbrMaterialAsset>("white.ron").unwrap();
+    let material = asset_store.load::<MaterialAsset>("white.ron").unwrap();
     command_buffer.insert((
         ground_mesh_asset_handle,
         material,

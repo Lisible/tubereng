@@ -15,7 +15,7 @@ use tubereng::{
         camera::{ActiveCamera, Camera, FlyCamera},
         geometry::{MeshAsset, MeshDescription, Vertex},
         light::PointLight,
-        material::{MaterialAsset, PbrMaterialAsset, ShaderMaterialAsset},
+        material::{MaterialAsset, ShaderMaterialAsset},
         pipeline::default_pipeline::DefaultRenderPipelineSettings,
     },
     input::{keyboard::Key, InputState},
