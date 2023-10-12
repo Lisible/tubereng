@@ -19,6 +19,18 @@ pub enum GraphicsError {
     TextureAssetNotFound,
     InvalidMesh,
     AssetError(tubereng_assets::AssetError),
+    RegexBuildFail,
+    WgslParseError {
+        expected: &'static str,
+        encountered: Option<&'static str>,
+    },
+    WgslMissingAttribute,
+    WgslAddressSpaceParseError,
+    WgslAccessModeParseError,
+    WgslMissingTypeDecl,
+    WgslParseSourceStringError,
+    WgslTreeSitterLanguageError,
+    WgslTreeSitterParseError,
 }
 
 #[derive(Debug)]
@@ -35,6 +47,7 @@ pub mod pipeline;
 pub mod render_graph;
 pub mod shader;
 pub mod texture;
+pub mod wgsl;
 
 #[derive(Clone, Copy)]
 pub struct WindowSize {

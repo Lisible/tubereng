@@ -2,7 +2,7 @@ use crate::{
     camera::{ActiveCamera, Camera, OPENGL_TO_WGPU_MATRIX},
     color::srgb_perceived_lightness,
     geometry::MeshAsset,
-    material::{Material, MaterialAsset, MaterialCache, ShaderMaterial},
+    material::{Material, MaterialAsset, ShaderMaterial},
     render_graph::{RenderGraph, RenderPass},
     shader::{ShaderAsset, ShaderCache},
     texture::{DepthBufferTextureHandle, TextureCache},
@@ -418,7 +418,7 @@ impl RenderPipeline for DefaultRenderPipeline {
             });
             let geometry_shader = asset_store.get(geometry_shader_handle).unwrap();
             ctx.shader_cache
-                .load(&ctx.device, geometry_shader_handle, geometry_shader);
+                .load(&ctx.device, geometry_shader_handle, &geometry_shader)?;
             self.geometry_shader = Some(geometry_shader_handle);
         }
 
@@ -427,8 +427,11 @@ impl RenderPipeline for DefaultRenderPipeline {
                 source: include_str!("gradient_sky.wgsl").to_string(),
             });
             let gradient_sky_shader = asset_store.get(gradient_sky_shader_handle).unwrap();
-            ctx.shader_cache
-                .load(&ctx.device, gradient_sky_shader_handle, gradient_sky_shader);
+            ctx.shader_cache.load(
+                &ctx.device,
+                gradient_sky_shader_handle,
+                &gradient_sky_shader,
+            )?;
             self.gradient_sky_shader = Some(gradient_sky_shader_handle);
         }
 
@@ -438,7 +441,7 @@ impl RenderPipeline for DefaultRenderPipeline {
             });
             let debug_grid_shader = asset_store.get(debug_grid_shader_handle).unwrap();
             ctx.shader_cache
-                .load(&ctx.device, debug_grid_shader_handle, debug_grid_shader);
+                .load(&ctx.device, debug_grid_shader_handle, &debug_grid_shader)?;
             self.debug_grid_shader = Some(debug_grid_shader_handle);
         }
 

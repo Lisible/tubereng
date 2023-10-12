@@ -173,7 +173,7 @@ impl MaterialCache {
         let shader_path = &shader_material.shader;
         let shader_asset_handle = asset_store.load::<ShaderAsset>(shader_path).unwrap();
         let shader_asset = asset_store.get(shader_asset_handle).unwrap();
-        shader_cache.load(device, shader_asset_handle, shader_asset);
+        shader_cache.load(device, shader_asset_handle, &shader_asset);
 
         self.materials[material_asset_handle.id()] =
             Some(Material::ShaderMaterial(ShaderMaterial {

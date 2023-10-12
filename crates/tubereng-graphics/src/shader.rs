@@ -1,7 +1,9 @@
+use crate::{
+    wgsl::{self, AddressSpace, Variable, VariableKind},
+    Result,
+};
 use std::rc::Rc;
-
 use tubereng_assets::{Asset, AssetHandle, AssetLoader};
-use wgpu::BindGroupLayoutDescriptor;
 
 pub struct ShaderCache {
     shaders: Vec<Option<Shader>>,
@@ -27,19 +29,28 @@ impl ShaderCache {
         self.shaders[shader.id()].as_ref()
     }
 
+    /// Loads a shader into the cache
+    ///
+    /// # Errors
+    /// This might return an Err if the shader metadata cannot be created
     pub fn load(
         &mut self,
         device: &wgpu::Device,
         handle: AssetHandle<ShaderAsset>,
-        shader_asset: Rc<ShaderAsset>,
-    ) {
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some(&format!("shader_{}", handle.id())),
+        shader_asset: &Rc<ShaderAsset>,
+    ) -> Result<()> {
+        let shader_name = &format!("shader_{}", handle.id());
+        let shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some(shader_name),
             source: wgpu::ShaderSource::Wgsl(shader_asset.source.clone().into()),
         });
+
+        let metadata = ShaderMetadata::new(shader_name, &shader_asset.source)?;
         self.shaders[handle.id()] = Some(Shader {
-            shader_module: shader,
+            shader_module,
+            metadata,
         });
+        Ok(())
     }
 }
 
@@ -80,72 +91,82 @@ impl Shader {
 
 pub struct ShaderMetadata {
     name: String,
-    bind_groups: Vec<BindGroup>,
+    bind_group_layout_entries: Vec<Vec<wgpu::BindGroupLayoutEntry>>,
 }
 
 impl ShaderMetadata {
-    pub fn bind_group_layout_descriptors(&self) -> &[wgpu::BindGroupLayoutDescriptor] {
-        &self
-            .bind_groups
-            .iter()
-            .map(|bind_group| bind_group.into())
-            .collect::<Vec<_>>()
-    }
+    pub fn new(shader_name: &str, source: &str) -> Result<Self> {
+        let mut variables = wgsl::extract_global_variables_from_shader_source(source)?;
+        variables.sort_by(|a, b| {
+            a.attributes
+                .group
+                .cmp(&b.attributes.group)
+                .then(a.attributes.binding.cmp(&b.attributes.binding))
+        });
 
-    pub fn bind_groups(&self) -> &[BindGroup] {
-        &self.bind_groups
-    }
+        let mut bind_group_entries_per_group = vec![];
+        for variable in &variables {
+            let bind_group = variable.attributes.group as usize;
+            if bind_group_entries_per_group.len() < bind_group + 1 {
+                bind_group_entries_per_group.push(vec![]);
+            }
 
-    pub fn new(shader_name: &str) -> Self {
-        Self {
-            name: shader_name.into(),
-            bind_groups: vec![],
+            bind_group_entries_per_group[bind_group].push(wgpu::BindGroupLayoutEntry {
+                binding: variable.attributes.binding,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                ty: variable.binding_type(),
+                count: None,
+            });
         }
+
+        Ok(ShaderMetadata {
+            name: shader_name.to_string(),
+            bind_group_layout_entries: bind_group_entries_per_group,
+        })
+    }
+
+    #[must_use]
+    pub fn bind_group_layout_descriptor(&self) -> Vec<wgpu::BindGroupLayoutDescriptor<'_>> {
+        let mut bind_group_layout_descriptors = vec![];
+        for group in 0..self.bind_group_layout_entries.len() {
+            bind_group_layout_descriptors.push(wgpu::BindGroupLayoutDescriptor {
+                label: None,
+                entries: &self.bind_group_layout_entries[group],
+            });
+        }
+
+        bind_group_layout_descriptors
     }
 }
 
+#[derive(Clone)]
 pub struct BindGroup {
     entries: Vec<BindGroupEntry>,
 }
 
 impl BindGroup {
+    #[must_use]
     pub fn entries(&self) -> &[BindGroupEntry] {
         &self.entries
     }
 }
 
-impl From<&BindGroup> for wgpu::BindGroupLayoutDescriptor<'_> {
-    fn from(value: &BindGroup) -> Self {
-        wgpu::BindGroupLayoutDescriptor {
-            label: None,
-            entries: &value
-                .entries
-                .iter()
-                .map(|bind_group_entry| bind_group_entry.into())
-                .collect::<Vec<_>>(),
-        }
-    }
-}
-
+#[derive(Clone)]
 pub struct BindGroupEntry {
     name: String,
-    r#type: BindingType,
+    binding_type: BindingType,
     visibility: ShaderStage,
 }
 
-impl From<&BindGroupEntry> for wgpu::BindGroupLayoutEntry {
-    fn from(value: &BindGroupEntry) -> Self {
-        todo!()
-    }
-}
-
 impl BindGroupEntry {
+    #[must_use]
     pub fn name(&self) -> &str {
         &self.name
     }
 
-    pub fn r#type(&self) -> BindingType {
-        self.r#type
+    #[must_use]
+    pub fn binding_type(&self) -> BindingType {
+        self.binding_type
     }
 }
 
@@ -157,6 +178,7 @@ pub enum BindingType {
     Storage,
 }
 
+#[derive(Debug, Clone, Copy)]
 pub enum ShaderStage {
     Vertex,
     Fragment,
@@ -167,10 +189,40 @@ pub enum ShaderStage {
 impl From<ShaderStage> for wgpu::ShaderStages {
     fn from(value: ShaderStage) -> Self {
         match value {
-            Vertex => wgpu::ShaderStages::VERTEX,
-            Fragment => wgpu::ShaderStages::FRAGMENT,
-            VertexFragment => wgpu::ShaderStages::VERTEX_FRAGMENT,
-            Compute => wgpu::ShaderStages::COMPUTE,
+            ShaderStage::Vertex => wgpu::ShaderStages::VERTEX,
+            ShaderStage::Fragment => wgpu::ShaderStages::FRAGMENT,
+            ShaderStage::VertexFragment => wgpu::ShaderStages::VERTEX_FRAGMENT,
+            ShaderStage::Compute => wgpu::ShaderStages::COMPUTE,
+        }
+    }
+}
+
+impl Variable {
+    fn binding_type(&self) -> wgpu::BindingType {
+        if let Some(address_space) = self.address_space {
+            if address_space == AddressSpace::Storage {
+                return wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                };
+            }
+        }
+
+        if self.kind == VariableKind::Texture {
+            return wgpu::BindingType::Texture {
+                sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                view_dimension: wgpu::TextureViewDimension::D2,
+                multisampled: false,
+            };
+        } else if self.kind == VariableKind::Sampler {
+            return wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering);
+        }
+
+        wgpu::BindingType::Buffer {
+            ty: wgpu::BufferBindingType::Uniform,
+            has_dynamic_offset: false,
+            min_binding_size: None,
         }
     }
 }
