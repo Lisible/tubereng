@@ -37,8 +37,19 @@ where
         self.application_title
     }
 
-    pub fn initialize_renderer(&mut self, renderer: Renderer<R>) {
+    /// Initializes the renderer
+    ///
+    /// # Panics
+    ///
+    /// Panics if the render pipeline initialization fails
+    pub fn initialize_renderer(&mut self, mut renderer: Renderer<R>) {
+        let asset_store = self.ecs.resource_mut::<AssetStore>();
+        // SAFETY: When the engine is bult by the `EngineBuilder`, an AssetStore resource is created
+        // So it should be present anyway
+        let mut asset_store = unsafe { asset_store.unwrap_unchecked() };
+        renderer.initialize_render_pipeline(&self.render_pipeline_settings, &mut asset_store).unwrap();
         self.renderer = Some(renderer);
+
         info!("Renderer initialized");
     }
 

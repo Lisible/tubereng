@@ -1,6 +1,4 @@
-use crate::{
-    material::MaterialCache, shader::ShaderCache, texture::TextureCache, RenderingContext, Result,
-};
+use crate::{RenderingContext, Result};
 
 use tubereng_assets::AssetStore;
 use tubereng_ecs::entity::EntityStore;
@@ -9,13 +7,18 @@ pub mod default_pipeline;
 
 pub trait RenderPipeline {
     type RenderPipelineSettings: Default;
+    /// Creates a new `RenderPipeline`
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if the creation fails
     fn new(
-        settings: &Self::RenderPipelineSettings,
-        device: &wgpu::Device,
-        surface_configuration: &wgpu::SurfaceConfiguration,
-        texture_cache: &mut TextureCache,
-        shader_modules: &mut ShaderCache,
-    ) -> Self;
+        render_pipeline_settings: &Self::RenderPipelineSettings,
+        ctx: &mut RenderingContext,
+        asset_store: &mut AssetStore,
+    ) -> Result<Self>
+    where
+        Self: std::marker::Sized;
     /// Prepares the render
     /// # Errors
     /// Returns an error if the preparation fails

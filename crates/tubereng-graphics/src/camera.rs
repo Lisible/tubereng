@@ -98,7 +98,8 @@ fn move_camera(
     delta_time: Res<DeltaTime>,
 ) {
     let input = input.0;
-    let delta_time = delta_time.0 .0;
+    let delta_time = delta_time.0;
+    let delta_time = delta_time.0;
 
     let mut camera_speed = 1.0;
     if input.keyboard.is_key_down(Key::LShift) {

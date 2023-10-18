@@ -4,8 +4,8 @@ use crate::{
     geometry::MeshAsset,
     material::{Material, MaterialAsset, ShaderMaterial},
     render_graph::{RenderGraph, RenderPass},
-    shader::{ShaderAsset, ShaderCache},
-    texture::{DepthBufferTextureHandle, TextureCache},
+    shader::ShaderAsset,
+    texture::DepthBufferTextureHandle,
     DrawCommand, Result,
 };
 
@@ -23,57 +23,35 @@ const SKY_TOP_COLOR: [f32; 4] = [0.192, 0.302, 0.475, 1.0];
 const SKY_BOTTOM_COLOR: [f32; 4] = [0.324, 0.179, 0.069, 1.0];
 pub struct DefaultRenderPipeline {
     render_debug_grid: bool,
-    material_bind_group_layout: wgpu::BindGroupLayout,
     mesh_uniform_buffer: wgpu::Buffer,
-    mesh_bind_group_layout: wgpu::BindGroupLayout,
     mesh_bind_group: wgpu::BindGroup,
     camera_uniform: CameraUniform,
     camera_buffer: wgpu::Buffer,
-    camera_bind_group_layout: wgpu::BindGroupLayout,
     camera_bind_group: wgpu::BindGroup,
     inverse_camera_uniform: InverseCameraUniform,
     inverse_camera_buffer: wgpu::Buffer,
-    inverse_camera_bind_group_layout: wgpu::BindGroupLayout,
     inverse_camera_bind_group: wgpu::BindGroup,
 
-    gradient_uniform_bind_group_layout: wgpu::BindGroupLayout,
     gradient_uniform_bind_group: wgpu::BindGroup,
     depth_buffer_texture_handle: DepthBufferTextureHandle,
 
     light_storage: LightStorage,
     light_storage_buffer: wgpu::Buffer,
-    light_storage_bind_group_layout: wgpu::BindGroupLayout,
     light_storage_bind_group: wgpu::BindGroup,
-    geometry_shader: Option<AssetHandle<ShaderAsset>>,
-    gradient_sky_shader: Option<AssetHandle<ShaderAsset>>,
-    debug_grid_shader: Option<AssetHandle<ShaderAsset>>,
+    geometry_shader: AssetHandle<ShaderAsset>,
+    gradient_sky_shader: AssetHandle<ShaderAsset>,
+    debug_grid_shader: AssetHandle<ShaderAsset>,
 }
 
 impl DefaultRenderPipeline {
     fn create_mesh_bind_group(
         device: &wgpu::Device,
+        mesh_bind_group_layout: &wgpu::BindGroupLayout,
         mesh_uniform_buffer: &wgpu::Buffer,
-    ) -> (wgpu::BindGroupLayout, wgpu::BindGroup) {
-        let mesh_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("mesh_bind_group_layout"),
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: true,
-                        min_binding_size: wgpu::BufferSize::new(
-                            std::mem::size_of::<MeshUniform>() as wgpu::BufferAddress
-                        ),
-                    },
-                    count: None,
-                }],
-            });
-
+    ) -> wgpu::BindGroup {
         let mesh_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("mesh_bind_group"),
-            layout: &mesh_bind_group_layout,
+            layout: mesh_bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
                 resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
@@ -86,149 +64,72 @@ impl DefaultRenderPipeline {
             }],
         });
 
-        (mesh_bind_group_layout, mesh_bind_group)
+        mesh_bind_group
     }
 
     fn create_camera_bind_group(
         device: &wgpu::Device,
+        camera_bind_group_layout: &wgpu::BindGroupLayout,
         camera_buffer: &wgpu::Buffer,
-    ) -> (wgpu::BindGroupLayout, wgpu::BindGroup) {
-        let camera_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("camera_bind_group_layout"),
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                }],
-            });
+    ) -> wgpu::BindGroup {
         let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("camera_bind_group"),
-            layout: &camera_bind_group_layout,
+            layout: camera_bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
                 resource: camera_buffer.as_entire_binding(),
             }],
         });
-        (camera_bind_group_layout, camera_bind_group)
+        camera_bind_group
     }
 
     fn create_inverse_camera_bind_group(
         device: &wgpu::Device,
+        inverse_camera_bind_group_layout: &wgpu::BindGroupLayout,
         inverse_camera_buffer: &wgpu::Buffer,
-    ) -> (wgpu::BindGroupLayout, wgpu::BindGroup) {
-        let inverse_camera_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("inverse_camera_bind_group_layout"),
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                }],
-            });
+    ) -> wgpu::BindGroup {
         let inverse_camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("inverse_camera_bind_group"),
-            layout: &inverse_camera_bind_group_layout,
+            layout: inverse_camera_bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
                 resource: inverse_camera_buffer.as_entire_binding(),
             }],
         });
-        (inverse_camera_bind_group_layout, inverse_camera_bind_group)
-    }
-    fn create_material_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
-        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("material_bind_group_layout"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-            ],
-        })
+        inverse_camera_bind_group
     }
 
     fn create_gradient_uniform_bind_group(
         device: &wgpu::Device,
+        gradient_uniform_bind_group_layout: &wgpu::BindGroupLayout,
         gradient_uniform_buffer: &wgpu::Buffer,
-    ) -> (wgpu::BindGroupLayout, wgpu::BindGroup) {
-        let gradient_uniform_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("gradient_uniform_bind_group_layout"),
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                }],
-            });
+    ) -> wgpu::BindGroup {
         let gradient_uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("gradient_uniform_bind_group"),
-            layout: &gradient_uniform_bind_group_layout,
+            layout: gradient_uniform_bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
                 resource: gradient_uniform_buffer.as_entire_binding(),
             }],
         });
-        (
-            gradient_uniform_bind_group_layout,
-            gradient_uniform_bind_group,
-        )
+
+        gradient_uniform_bind_group
     }
 
     fn create_light_storage_bind_group(
         device: &wgpu::Device,
+        light_storage_bind_group_layout: &wgpu::BindGroupLayout,
         light_storage_buffer: &wgpu::Buffer,
-    ) -> (wgpu::BindGroupLayout, wgpu::BindGroup) {
-        let light_storage_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("light_storage_bind_group_layout"),
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                }],
-            });
+    ) -> wgpu::BindGroup {
         let light_storage_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("light_storage_bind_group"),
-            layout: &light_storage_bind_group_layout,
+            layout: light_storage_bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
                 resource: light_storage_buffer.as_entire_binding(),
             }],
         });
-        (light_storage_bind_group_layout, light_storage_bind_group)
+        light_storage_bind_group
     }
 
     fn add_skybox_pass<'a>(
@@ -238,12 +139,9 @@ impl DefaultRenderPipeline {
     ) {
         RenderPass::new("skybox", render_graph)
             .with_no_vertex_buffer()
-            .with_shader(self.gradient_sky_shader.unwrap())
+            .with_shader(self.gradient_sky_shader)
             .with_render_target(render_target)
-            .with_bind_group(
-                &self.gradient_uniform_bind_group_layout,
-                &self.gradient_uniform_bind_group,
-            )
+            .with_bind_group(&self.gradient_uniform_bind_group)
             .dispatch(
                 |rpass,
                  bind_groups,
@@ -297,56 +195,24 @@ impl RenderPipeline for DefaultRenderPipeline {
     type RenderPipelineSettings = DefaultRenderPipelineSettings;
     fn new(
         render_pipeline_settings: &Self::RenderPipelineSettings,
-        device: &wgpu::Device,
-        surface_configuration: &wgpu::SurfaceConfiguration,
-        texture_cache: &mut TextureCache,
-        shader_cache: &mut ShaderCache,
-    ) -> Self {
-        let camera_uniform = CameraUniform::new();
-        let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("camera"),
-            contents: bytemuck::cast_slice(&[camera_uniform]),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-        let (camera_bind_group_layout, camera_bind_group) =
-            Self::create_camera_bind_group(device, &camera_buffer);
-
-        let inverse_camera_uniform = InverseCameraUniform {
-            view_projection_inverse: Matrix4f::identity().into(),
-        };
-        let inverse_camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("view_projection_inverse"),
-            contents: bytemuck::cast_slice(&[inverse_camera_uniform]),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-        let (inverse_camera_bind_group_layout, inverse_camera_bind_group) =
-            Self::create_inverse_camera_bind_group(device, &inverse_camera_buffer);
-
-        let mesh_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        ctx: &mut RenderingContext,
+        asset_store: &mut AssetStore,
+    ) -> Result<Self> {
+        // geometry shader
+        let mesh_uniform_buffer = ctx.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("mesh_uniform_buffer"),
             size: (std::mem::size_of::<MeshUniform>() * 100) as u64,
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::UNIFORM,
             mapped_at_creation: false,
         });
-        let (mesh_bind_group_layout, mesh_bind_group) =
-            Self::create_mesh_bind_group(device, &mesh_uniform_buffer);
-        let material_bind_group_layout = Self::create_material_bind_group_layout(device);
-
-        let gradient_uniform = GradientUniform {
-            top_color: SKY_TOP_COLOR,
-            bottom_color: SKY_BOTTOM_COLOR,
-        };
-
-        let gradient_uniform_buffer =
-            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("gradient_uniform_buffer"),
-                contents: bytemuck::cast_slice(&[gradient_uniform]),
+        let camera_uniform = CameraUniform::new();
+        let camera_buffer = ctx
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("camera"),
+                contents: bytemuck::cast_slice(&[camera_uniform]),
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             });
-
-        let (gradient_uniform_bind_group_layout, gradient_uniform_bind_group) =
-            Self::create_gradient_uniform_bind_group(device, &gradient_uniform_buffer);
-
         let ambient_light =
             srgb_perceived_lightness(SKY_TOP_COLOR[0], SKY_TOP_COLOR[1], SKY_TOP_COLOR[2])
                 + srgb_perceived_lightness(
@@ -362,47 +228,130 @@ impl RenderPipeline for DefaultRenderPipeline {
             _padding: 0,
         };
 
-        let light_storage_buffer = device.create_buffer_init(&BufferInitDescriptor {
+        let light_storage_buffer = ctx.device.create_buffer_init(&BufferInitDescriptor {
             label: Some("light_storage_buffer"),
             contents: bytemuck::cast_slice(&[light_storage]),
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::STORAGE,
         });
-        let (light_storage_bind_group_layout, light_storage_bind_group) =
-            Self::create_light_storage_bind_group(device, &light_storage_buffer);
+        let geometry_shader_handle = asset_store.store(ShaderAsset {
+            source: include_str!("shader.wgsl").to_string(),
+        });
+        let geometry_shader_asset = asset_store.get(geometry_shader_handle).unwrap();
+        let (mesh_bind_group, camera_bind_group, light_storage_bind_group) = {
+            ctx.shader_cache
+                .load(&ctx.device, geometry_shader_handle, &geometry_shader_asset)?;
+            let geometry_shader = ctx.shader_cache.get(geometry_shader_handle).unwrap();
+            let mesh_bind_group_layout = geometry_shader.bind_group_layouts()[1];
+            let mesh_bind_group = Self::create_mesh_bind_group(
+                &ctx.device,
+                mesh_bind_group_layout,
+                &mesh_uniform_buffer,
+            );
 
-        let depth_texture_handle = texture_cache.create_depth_texture(
-            device,
+            let camera_bind_group_layout = geometry_shader.bind_group_layouts()[0];
+            let camera_bind_group = Self::create_camera_bind_group(
+                &ctx.device,
+                camera_bind_group_layout,
+                &camera_buffer,
+            );
+            let light_storage_bind_group_layout = geometry_shader.bind_group_layouts()[3];
+            let light_storage_bind_group = Self::create_light_storage_bind_group(
+                &ctx.device,
+                light_storage_bind_group_layout,
+                &light_storage_buffer,
+            );
+
+            (mesh_bind_group, camera_bind_group, light_storage_bind_group)
+        };
+
+        // gradient sky
+        let gradient_uniform = GradientUniform {
+            top_color: SKY_TOP_COLOR,
+            bottom_color: SKY_BOTTOM_COLOR,
+        };
+        let gradient_uniform_buffer =
+            &ctx.device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("gradient_uniform_buffer"),
+                    contents: bytemuck::cast_slice(&[gradient_uniform]),
+                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                });
+        let gradient_sky_shader_handle = asset_store.store(ShaderAsset {
+            source: include_str!("gradient_sky.wgsl").to_string(),
+        });
+        let gradient_sky_shader_asset = asset_store.get(gradient_sky_shader_handle).unwrap();
+        let gradient_uniform_bind_group = {
+            ctx.shader_cache.load(
+                &ctx.device,
+                gradient_sky_shader_handle,
+                &gradient_sky_shader_asset,
+            )?;
+            let gradient_sky_shader = ctx.shader_cache.get(gradient_sky_shader_handle).unwrap();
+
+            let gradient_uniform_bind_group_layout = gradient_sky_shader.bind_group_layouts()[0];
+
+            Self::create_gradient_uniform_bind_group(
+                &ctx.device,
+                gradient_uniform_bind_group_layout,
+                gradient_uniform_buffer,
+            )
+        };
+
+        // debug grid
+        let debug_grid_shader_handle = asset_store.store(ShaderAsset {
+            source: include_str!("debug_grid.wgsl").to_string(),
+        });
+        let debug_grid_shader_asset = asset_store.get(debug_grid_shader_handle).unwrap();
+        ctx.shader_cache.load(
+            &ctx.device,
+            debug_grid_shader_handle,
+            &debug_grid_shader_asset,
+        )?;
+        let debug_grid_shader = ctx.shader_cache.get(debug_grid_shader_handle).unwrap();
+        let inverse_camera_uniform = InverseCameraUniform {
+            view_projection_inverse: Matrix4f::identity().into(),
+        };
+        let inverse_camera_buffer =
+            ctx.device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("view_projection_inverse"),
+                    contents: bytemuck::cast_slice(&[inverse_camera_uniform]),
+                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                });
+        let inverse_camera_bind_group_layout = debug_grid_shader.bind_group_layouts()[1];
+        let inverse_camera_bind_group = Self::create_inverse_camera_bind_group(
+            &ctx.device,
+            inverse_camera_bind_group_layout,
+            &inverse_camera_buffer,
+        );
+
+        let depth_texture_handle = ctx.texture_cache.create_depth_texture(
+            &ctx.device,
             "depth_buffer",
-            surface_configuration.width,
-            surface_configuration.height,
+            ctx.surface_configuration.width,
+            ctx.surface_configuration.height,
             true,
         );
 
-        Self {
-            material_bind_group_layout,
+        Ok(Self {
             mesh_uniform_buffer,
-            mesh_bind_group_layout,
             mesh_bind_group,
             camera_uniform,
             camera_buffer,
-            camera_bind_group_layout,
             camera_bind_group,
-            gradient_uniform_bind_group_layout,
             gradient_uniform_bind_group,
             depth_buffer_texture_handle: depth_texture_handle,
             inverse_camera_uniform,
             inverse_camera_buffer,
-            inverse_camera_bind_group_layout,
             inverse_camera_bind_group,
             light_storage,
             light_storage_buffer,
-            light_storage_bind_group_layout,
             light_storage_bind_group,
             render_debug_grid: render_pipeline_settings.render_debug_grid,
-            geometry_shader: None,
-            gradient_sky_shader: None,
-            debug_grid_shader: None,
-        }
+            geometry_shader: geometry_shader_handle,
+            gradient_sky_shader: gradient_sky_shader_handle,
+            debug_grid_shader: debug_grid_shader_handle,
+        })
     }
 
     #[allow(clippy::too_many_lines)]
@@ -412,39 +361,6 @@ impl RenderPipeline for DefaultRenderPipeline {
         entity_store: &EntityStore,
         asset_store: &mut AssetStore,
     ) -> Result<()> {
-        if self.geometry_shader.is_none() {
-            let geometry_shader_handle = asset_store.store(ShaderAsset {
-                source: include_str!("shader.wgsl").to_string(),
-            });
-            let geometry_shader = asset_store.get(geometry_shader_handle).unwrap();
-            ctx.shader_cache
-                .load(&ctx.device, geometry_shader_handle, &geometry_shader)?;
-            self.geometry_shader = Some(geometry_shader_handle);
-        }
-
-        if self.gradient_sky_shader.is_none() {
-            let gradient_sky_shader_handle = asset_store.store(ShaderAsset {
-                source: include_str!("gradient_sky.wgsl").to_string(),
-            });
-            let gradient_sky_shader = asset_store.get(gradient_sky_shader_handle).unwrap();
-            ctx.shader_cache.load(
-                &ctx.device,
-                gradient_sky_shader_handle,
-                &gradient_sky_shader,
-            )?;
-            self.gradient_sky_shader = Some(gradient_sky_shader_handle);
-        }
-
-        if self.debug_grid_shader.is_none() {
-            let debug_grid_shader_handle = asset_store.store(ShaderAsset {
-                source: include_str!("debug_grid.wgsl").to_string(),
-            });
-            let debug_grid_shader = asset_store.get(debug_grid_shader_handle).unwrap();
-            ctx.shader_cache
-                .load(&ctx.device, debug_grid_shader_handle, &debug_grid_shader)?;
-            self.debug_grid_shader = Some(debug_grid_shader_handle);
-        }
-
         let camera_query = Q::<(&ActiveCamera, &Camera, &Transform)>::new(entity_store);
         let (_, camera, camera_transform) = camera_query.iter().next().expect("Camera not found");
         let camera_view_projection_matrix = OPENGL_TO_WGPU_MATRIX
@@ -486,7 +402,8 @@ impl RenderPipeline for DefaultRenderPipeline {
                     asset_store,
                     &mut ctx.texture_cache,
                     &mut ctx.shader_cache,
-                    &self.material_bind_group_layout,
+                    self.geometry_shader,
+                    2,
                     &ctx.device,
                     &ctx.queue,
                 )?;
@@ -570,31 +487,24 @@ impl RenderPipeline for DefaultRenderPipeline {
                 .with_no_vertex_buffer()
                 .dispatch(
                     |rpass,
-                     bind_groups,
-                     vertex_buffers,
-                     index_buffers,
-                     draw_commands,
-                     material_cache| {
+                     _bind_groups,
+                     _vertex_buffers,
+                     _index_buffers,
+                     _draw_commands,
+                     _material_cache| {
                         rpass.draw(0..3, 0..1);
                     },
                 );
         }
 
         RenderPass::new("pbr_render_pass", &mut render_graph)
-            .with_shader(self.geometry_shader.unwrap())
+            .with_shader(self.geometry_shader)
             .with_depth_buffer(self.depth_buffer_texture_handle, true)
             .with_render_target(render_target)
-            .with_bind_group(&self.camera_bind_group_layout, &self.camera_bind_group)
-            .with_bind_group(&self.mesh_bind_group_layout, &self.mesh_bind_group)
-            .with_bind_group_layout(&self.material_bind_group_layout)
-            .with_bind_group(
-                &self.light_storage_bind_group_layout,
-                &self.light_storage_bind_group,
-            )
-            .with_bind_group(
-                &self.light_storage_bind_group_layout,
-                &self.light_storage_bind_group,
-            )
+            .with_bind_group(&self.camera_bind_group)
+            .with_bind_group(&self.mesh_bind_group)
+            .with_bind_group(&self.light_storage_bind_group)
+            .with_bind_group(&self.light_storage_bind_group)
             .dispatch(
                 |rpass,
                  bind_groups,
@@ -652,13 +562,10 @@ impl RenderPipeline for DefaultRenderPipeline {
                     },
                     alpha: wgpu::BlendComponent::default(),
                 })
-                .with_shader(self.debug_grid_shader.unwrap())
+                .with_shader(self.debug_grid_shader)
                 .with_render_target(render_target)
-                .with_bind_group(&self.camera_bind_group_layout, &self.camera_bind_group)
-                .with_bind_group(
-                    &self.inverse_camera_bind_group_layout,
-                    &self.inverse_camera_bind_group,
-                )
+                .with_bind_group(&self.camera_bind_group)
+                .with_bind_group(&self.inverse_camera_bind_group)
                 .dispatch(
                     |rpass,
                      bind_groups,

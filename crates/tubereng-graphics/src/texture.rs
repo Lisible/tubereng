@@ -1,4 +1,4 @@
-use std::{io::Cursor, rc::Rc};
+use std::io::Cursor;
 
 use image;
 use tubereng_assets::{Asset, AssetError, AssetHandle, AssetLoader};
@@ -138,7 +138,7 @@ impl TextureCache {
     pub fn load_to_vram(
         &mut self,
         handle: AssetHandle<TextureAsset>,
-        texture: Rc<TextureAsset>,
+        texture: &TextureAsset,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
     ) -> &wgpu::Texture {

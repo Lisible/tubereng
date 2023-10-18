@@ -26,7 +26,7 @@ struct PointLight {
 var<uniform> camera: CameraUniform;
 
 @group(1) @binding(0)
-var<uniform> mesh_uniform: MeshUniform;
+var<uniform> dyn_mesh_uniform: MeshUniform;
 
 @group(2) @binding(0)
 var t_diffuse: texture_2d<f32>;
@@ -57,9 +57,9 @@ fn vs_main(
     model: VertexInput
 ) -> VertexOutput {
     var out: VertexOutput;
-    out.fragment_position = (mesh_uniform.world_transform * vec4<f32>(model.position, 1.0)).xyz;    
+    out.fragment_position = (dyn_mesh_uniform.world_transform * vec4<f32>(model.position, 1.0)).xyz;    
     out.clip_position = camera.view_projection_matrix * vec4<f32>(out.fragment_position, 1.0);
-    out.normal = ((transpose(mesh_uniform.inverse_world_transform)) * vec4<f32>(model.normal, 1.0)).xyz;
+    out.normal = ((transpose(dyn_mesh_uniform.inverse_world_transform)) * vec4<f32>(model.normal, 1.0)).xyz;
     out.texture_coordinates = model.texture_coordinates;
     out.color = model.color;
     return out;

@@ -79,10 +79,14 @@ impl MaterialCache {
         asset_store: &mut AssetStore,
         texture_store: &mut TextureCache,
         shader_cache: &mut ShaderCache,
-        material_bind_group_layout: &wgpu::BindGroupLayout,
+        shader_handle: AssetHandle<ShaderAsset>,
+        bind_group_index: usize,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
     ) -> Result<()> {
+        let shader = shader_cache
+            .get(shader_handle)
+            .ok_or(GraphicsError::ShaderNotFoundInShaderCache)?;
         let material = asset_store
             .get(material_asset_handle)
             .ok_or(GraphicsError::MaterialAssetNotFound)?;
@@ -94,7 +98,7 @@ impl MaterialCache {
                     material_asset_handle,
                     asset_store,
                     texture_store,
-                    material_bind_group_layout,
+                    shader.bind_group_layouts()[bind_group_index],
                     pbr_material,
                 )?;
             }
@@ -105,7 +109,7 @@ impl MaterialCache {
                     asset_store,
                     shader_cache,
                     shader_material,
-                );
+                )?;
             }
         }
 
@@ -129,7 +133,7 @@ impl MaterialCache {
             .get(texture_asset_handle)
             .ok_or(GraphicsError::TextureAssetNotFound)?;
         let texture =
-            texture_store.load_to_vram(texture_asset_handle, texture_asset, device, queue);
+            texture_store.load_to_vram(texture_asset_handle, texture_asset.as_ref(), device, queue);
         let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
         let texture_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             address_mode_u: wgpu::AddressMode::ClampToEdge,
@@ -169,15 +173,16 @@ impl MaterialCache {
         asset_store: &mut AssetStore,
         shader_cache: &mut ShaderCache,
         shader_material: &ShaderMaterialAsset,
-    ) {
+    ) -> Result<()> {
         let shader_path = &shader_material.shader;
         let shader_asset_handle = asset_store.load::<ShaderAsset>(shader_path).unwrap();
         let shader_asset = asset_store.get(shader_asset_handle).unwrap();
-        shader_cache.load(device, shader_asset_handle, &shader_asset);
+        shader_cache.load(device, shader_asset_handle, &shader_asset)?;
 
         self.materials[material_asset_handle.id()] =
             Some(Material::ShaderMaterial(ShaderMaterial {
                 shader: shader_asset_handle,
             }));
+        Ok(())
     }
 }

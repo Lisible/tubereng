@@ -2,7 +2,7 @@ use crate::{
     wgsl::{self, AddressSpace, Variable, VariableKind},
     Result,
 };
-use std::rc::Rc;
+use std::{collections::HashMap, rc::Rc};
 use tubereng_assets::{Asset, AssetHandle, AssetLoader};
 
 pub struct ShaderCache {
@@ -46,8 +46,19 @@ impl ShaderCache {
         });
 
         let metadata = ShaderMetadata::new(shader_name, &shader_asset.source)?;
+        let mut bind_group_layouts = vec![];
+        for group in 0..metadata.bind_group_layout_entries().len() {
+            bind_group_layouts.push(device.create_bind_group_layout(
+                &wgpu::BindGroupLayoutDescriptor {
+                    label: None,
+                    entries: &metadata.bind_group_layout_entries()[group],
+                },
+            ));
+        }
+
         self.shaders[handle.id()] = Some(Shader {
             shader_module,
+            bind_group_layouts,
             metadata,
         });
         Ok(())
@@ -80,21 +91,39 @@ impl AssetLoader<ShaderAsset> for ShaderLoader {
 
 pub struct Shader {
     shader_module: wgpu::ShaderModule,
+    bind_group_layouts: Vec<wgpu::BindGroupLayout>,
     metadata: ShaderMetadata,
 }
 
 impl Shader {
+    #[must_use]
     pub fn shader_module(&self) -> &wgpu::ShaderModule {
         &self.shader_module
+    }
+
+    #[must_use]
+    pub fn bind_group_layouts(&self) -> Vec<&wgpu::BindGroupLayout> {
+        self.bind_group_layouts.iter().collect()
+    }
+
+    #[must_use]
+    pub fn metadata(&self) -> &ShaderMetadata {
+        &self.metadata
     }
 }
 
 pub struct ShaderMetadata {
     name: String,
+    parameters_metadata: HashMap<String, ParameterMetadata>,
     bind_group_layout_entries: Vec<Vec<wgpu::BindGroupLayoutEntry>>,
 }
 
 impl ShaderMetadata {
+    /// Creates a new `ShaderMetadata` instance
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if the global variables extraction from the shader source fails
     pub fn new(shader_name: &str, source: &str) -> Result<Self> {
         let mut variables = wgsl::extract_global_variables_from_shader_source(source)?;
         variables.sort_by(|a, b| {
@@ -104,8 +133,17 @@ impl ShaderMetadata {
                 .then(a.attributes.binding.cmp(&b.attributes.binding))
         });
 
+        let mut parameters_metadata = HashMap::new();
         let mut bind_group_entries_per_group = vec![];
         for variable in &variables {
+            parameters_metadata.insert(
+                variable.identifier.clone(),
+                ParameterMetadata {
+                    group: variable.attributes.group,
+                    binding: variable.attributes.binding,
+                },
+            );
+
             let bind_group = variable.attributes.group as usize;
             if bind_group_entries_per_group.len() < bind_group + 1 {
                 bind_group_entries_per_group.push(vec![]);
@@ -122,20 +160,40 @@ impl ShaderMetadata {
         Ok(ShaderMetadata {
             name: shader_name.to_string(),
             bind_group_layout_entries: bind_group_entries_per_group,
+            parameters_metadata,
         })
     }
 
     #[must_use]
-    pub fn bind_group_layout_descriptor(&self) -> Vec<wgpu::BindGroupLayoutDescriptor<'_>> {
-        let mut bind_group_layout_descriptors = vec![];
-        for group in 0..self.bind_group_layout_entries.len() {
-            bind_group_layout_descriptors.push(wgpu::BindGroupLayoutDescriptor {
-                label: None,
-                entries: &self.bind_group_layout_entries[group],
-            });
-        }
+    pub fn name(&self) -> &str {
+        &self.name
+    }
 
-        bind_group_layout_descriptors
+    #[must_use]
+    pub fn parameter_metadata(&self, parameter_identifier: &str) -> &ParameterMetadata {
+        &self.parameters_metadata[parameter_identifier]
+    }
+
+    #[must_use]
+    pub fn bind_group_layout_entries(&self) -> &[Vec<wgpu::BindGroupLayoutEntry>] {
+        &self.bind_group_layout_entries
+    }
+}
+
+pub struct ParameterMetadata {
+    group: u32,
+    binding: u32,
+}
+
+impl ParameterMetadata {
+    #[must_use]
+    pub fn group(&self) -> u32 {
+        self.group
+    }
+
+    #[must_use]
+    pub fn binding(&self) -> u32 {
+        self.binding
     }
 }
 
@@ -219,9 +277,10 @@ impl Variable {
             return wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering);
         }
 
+        let has_dynamic_offset = self.identifier.starts_with("dyn_");
         wgpu::BindingType::Buffer {
             ty: wgpu::BufferBindingType::Uniform,
-            has_dynamic_offset: false,
+            has_dynamic_offset,
             min_binding_size: None,
         }
     }

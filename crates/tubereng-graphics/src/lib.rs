@@ -31,6 +31,7 @@ pub enum GraphicsError {
     WgslParseSourceStringError,
     WgslTreeSitterLanguageError,
     WgslTreeSitterParseError,
+    ShaderNotFoundInShaderCache,
 }
 
 #[derive(Debug)]
@@ -68,14 +69,14 @@ where
 {
     _window: Window,
     rendering_context: RenderingContext,
-    pipeline: R,
+    pipeline: Option<R>,
 }
 
 impl<R> Renderer<R>
 where
     R: RenderPipeline,
 {
-    pub async fn new(render_pipeline_settings: &R::RenderPipelineSettings, window: Window) -> Self {
+    pub async fn new(window: Window) -> Self {
         let size = window.inner_size();
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
@@ -109,15 +110,8 @@ where
         let index_buffers = vec![];
         let material_cache = MaterialCache::new(&device);
 
-        let mut texture_cache = TextureCache::new();
-        let mut shader_cache = ShaderCache::new();
-        let pipeline = R::new(
-            render_pipeline_settings,
-            &device,
-            &surface_configuration,
-            &mut texture_cache,
-            &mut shader_cache,
-        );
+        let texture_cache = TextureCache::new();
+        let shader_cache = ShaderCache::new();
 
         let rendering_context = RenderingContext {
             device,
@@ -137,9 +131,29 @@ where
 
         Self {
             _window: window,
-            pipeline,
+            pipeline: None,
             rendering_context,
         }
+    }
+
+    /// Initializes the render pipeline
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if the render pipeline creation
+    /// fails
+    pub fn initialize_render_pipeline(
+        &mut self,
+        render_pipeline_settings: &R::RenderPipelineSettings,
+        asset_store: &mut AssetStore,
+    ) -> Result<()> {
+        self.pipeline = Some(R::new(
+            render_pipeline_settings,
+            &mut self.rendering_context,
+            asset_store,
+        )?);
+
+        Ok(())
     }
 
     fn request_adapter(
@@ -188,17 +202,26 @@ where
 
     /// # Errors
     /// An error may be returned if the render preparation fails
+    ///
+    /// # Panics
+    /// This will panic if the render pipeline has not been initialized
     pub fn prepare_render(
         &mut self,
         entity_store: &EntityStore,
         asset_store: &mut AssetStore,
     ) -> Result<()> {
-        self.pipeline
-            .prepare(&mut self.rendering_context, entity_store, asset_store)
+        self.pipeline.as_mut().unwrap().prepare(
+            &mut self.rendering_context,
+            entity_store,
+            asset_store,
+        )
     }
 
     /// # Errors
     /// An error may be returned if the rendering fails
+    /// # Panics
+    /// This will panic if the pipeline has not been initialized at this point,
+    /// or if the surface texture couldn't be fetched.
     pub fn render(&mut self) -> Result<()> {
         // TODO add proper error handling
         let output = self
@@ -218,6 +241,8 @@ where
                 });
 
         self.pipeline
+            .as_mut()
+            .unwrap()
             .render(&mut encoder, view, &mut self.rendering_context)?;
 
         self.rendering_context

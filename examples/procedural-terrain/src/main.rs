@@ -52,10 +52,10 @@ fn setup(command_buffer: &CommandBuffer, asset_store: ResMut<AssetStore>) {
 fn create_ground_mesh() -> MeshAsset {
     let mut vertices = vec![];
 
-    let width = 400;
-    let height = 400;
-    let max_elevation = 20.0;
-    let terrain_scale = 16.0;
+    let width = 1000;
+    let height = 1000;
+    let max_elevation = 150.0;
+    let terrain_scale = 1.0;
 
     for j in 0..width {
         for i in 0..height {
@@ -129,11 +129,13 @@ fn create_ground_mesh() -> MeshAsset {
 }
 
 fn color_for_elevation(elevation: f32) -> [f32; 3] {
-    if elevation < 3.0 {
+    if elevation < 30.0 {
         return [0.0, 0.0, 1.0];
-    } else if elevation < 10.0 {
+    } else if elevation < 50.0 {
+        return [1.0, 1.0, 0.0];
+    } else if elevation < 100.0 {
         return [0.0, 1.0, 0.0];
-    } else if elevation < 14.0 {
+    } else if elevation < 140.0 {
         return [0.2, 0.2, 0.2];
     }
 

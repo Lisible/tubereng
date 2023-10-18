@@ -71,10 +71,12 @@ pub struct Assets<T> {
 }
 
 impl<T> Assets<T> {
+    #[must_use]
     pub fn new() -> Self {
         Self { assets: vec![] }
     }
 
+    #[must_use]
     pub fn get(&self, index: usize) -> Rc<T> {
         self.assets[index].clone()
     }
@@ -82,6 +84,12 @@ impl<T> Assets<T> {
     pub fn store(&mut self, asset: T) -> usize {
         self.assets.push(Rc::new(asset));
         self.assets.len() - 1
+    }
+}
+
+impl<T> Default for Assets<T> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -136,12 +144,14 @@ where
     where
         A: 'static + Asset,
     {
-        let mut assets = self
+        let assets = self
             .assets
             .entry(TypeId::of::<A>())
-            .or_insert(Box::new(Assets::<A>::new()))
-            .downcast_mut::<Assets<A>>()
-            .unwrap();
+            .or_insert(Box::new(Assets::<A>::new()));
+
+        // SAFETY: The Assets<A> instance was created just before or in a previous call to store using the actual type
+        // of the asset parameter. So it can be downcasted to an Assets<A>
+        let assets = unsafe { assets.downcast_mut::<Assets<A>>().unwrap_unchecked() };
 
         let asset_id = assets.store(asset);
         AssetHandle::new(asset_id)
@@ -149,14 +159,17 @@ where
 
     #[must_use]
     pub fn get<T: 'static>(&self, handle: AssetHandle<T>) -> Option<Rc<T>> {
-        Some(
-            self.assets
-                .get(&TypeId::of::<T>())
-                .as_ref()?
-                .downcast_ref::<Assets<T>>()
-                .unwrap()
-                .get(handle.id),
-        )
+        let assets = self
+            .assets
+            .get(&TypeId::of::<T>())
+            .as_ref()?
+            .downcast_ref::<Assets<T>>();
+
+        // SAFETY: The assets HashMap entry has been stored using the type id of the asset type
+        // as the key and a Box<Assets<T>> as a value in the store method, so it can be downcasted back
+        // if we have an entry for the key being the type id of T
+        let assets = unsafe { assets.unwrap_unchecked() };
+        Some(assets.get(handle.id))
     }
 }
 

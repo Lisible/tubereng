@@ -112,7 +112,7 @@ impl<'layout> RenderGraph<'layout> {
         let shader_module = shader.shader_module();
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some(&format!("{}_pipeline_layout", render_pass.identifier)),
-            bind_group_layouts: &render_pass.bind_group_layouts,
+            bind_group_layouts: &shader.bind_group_layouts(),
             push_constant_ranges: &[],
         });
 
@@ -195,7 +195,6 @@ pub struct RenderPass<'layout> {
     render_targets: Vec<RenderTargetId>,
     dispatch_fn: BoxedRenderPassDispatchFn,
     primitive_topology: wgpu::PrimitiveTopology,
-    bind_group_layouts: Vec<&'layout wgpu::BindGroupLayout>,
     bind_groups: Vec<&'layout wgpu::BindGroup>,
     depth_buffer_texture_handle: Option<DepthBufferTextureHandle>,
     clear_depth_buffer_texture: bool,
@@ -219,7 +218,6 @@ pub struct RenderPassBuilder<'a, 'layout> {
     shader: Option<AssetHandle<ShaderAsset>>,
     render_targets: Vec<RenderTargetId>,
     primitive_topology: wgpu::PrimitiveTopology,
-    bind_group_layouts: Vec<&'layout wgpu::BindGroupLayout>,
     bind_groups: Vec<&'layout wgpu::BindGroup>,
     has_vertex_buffer: bool,
     depth_buffer_texture_handle: Option<DepthBufferTextureHandle>,
@@ -235,7 +233,6 @@ impl<'a, 'layout> RenderPassBuilder<'a, 'layout> {
             shader: None,
             render_targets: vec![],
             primitive_topology: wgpu::PrimitiveTopology::TriangleList,
-            bind_group_layouts: vec![],
             bind_groups: vec![],
             has_vertex_buffer: true,
             depth_buffer_texture_handle: None,
@@ -286,21 +283,7 @@ impl<'a, 'layout> RenderPassBuilder<'a, 'layout> {
     }
 
     #[must_use]
-    pub fn with_bind_group_layout(
-        mut self,
-        bind_group_layout: &'layout wgpu::BindGroupLayout,
-    ) -> Self {
-        self.bind_group_layouts.push(bind_group_layout);
-        self
-    }
-
-    #[must_use]
-    pub fn with_bind_group(
-        mut self,
-        bind_group_layout: &'layout wgpu::BindGroupLayout,
-        bind_group: &'layout wgpu::BindGroup,
-    ) -> Self {
-        self.bind_group_layouts.push(bind_group_layout);
+    pub fn with_bind_group(mut self, bind_group: &'layout wgpu::BindGroup) -> Self {
         self.bind_groups.push(bind_group);
         self
     }
@@ -323,7 +306,6 @@ impl<'a, 'layout> RenderPassBuilder<'a, 'layout> {
             render_targets: self.render_targets,
             primitive_topology: self.primitive_topology,
             dispatch_fn: Box::new(dispatch_fn),
-            bind_group_layouts: self.bind_group_layouts,
             bind_groups: self.bind_groups,
             depth_buffer_texture_handle: self.depth_buffer_texture_handle,
             clear_depth_buffer_texture: self.clear_depth_buffer_texture,
