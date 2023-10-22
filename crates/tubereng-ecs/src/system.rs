@@ -9,6 +9,7 @@ use crate::{
     entity::EntityStore,
     event::{EventQueue, EventReader, EventWriter},
     query::{Query, Q},
+    relationship::RelationshipStore,
     resource::Resources,
 };
 
@@ -44,6 +45,7 @@ impl Default for SystemSet {
 pub struct ExecutionContext<'a> {
     pub(crate) command_buffer: &'a CommandBuffer,
     pub(crate) entity_store: &'a EntityStore,
+    pub(crate) relationship_store: &'a RelationshipStore,
     pub(crate) resources: &'a Resources,
     pub(crate) event_queue: &'a EventQueue,
 }
@@ -225,7 +227,10 @@ where
     type Item<'a> = Q<'a, QD>;
 
     fn fetch<'a>(execution_context: &'a ExecutionContext<'a>) -> Self::Item<'a> {
-        Q::new(execution_context.entity_store)
+        Q::new(
+            execution_context.entity_store,
+            execution_context.relationship_store,
+        )
     }
 }
 

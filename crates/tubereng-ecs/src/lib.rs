@@ -1,9 +1,10 @@
 #![warn(clippy::pedantic)]
 #![allow(clippy::module_name_repetitions)]
 
-use entity::EntityStore;
+use entity::{EntityId, EntityStore};
 use event::EventQueue;
 use log::{info, trace};
+use relationship::{Relationship, RelationshipStore};
 use resource::Resources;
 use std::{
     any::Any,
@@ -18,13 +19,13 @@ pub mod commands;
 pub mod entity;
 pub mod event;
 pub mod query;
+pub mod relationship;
 pub mod resource;
 pub mod system;
 
-pub type EntityId = usize;
-
 pub struct Ecs {
     entity_store: EntityStore,
+    relationship_store: RelationshipStore,
     pending_commands: CommandBuffer,
     setup_system: Option<Box<dyn System>>,
     system_sets: Vec<SystemSet>,
@@ -41,6 +42,7 @@ impl Ecs {
             system_sets: vec![],
             resources: Resources::new(),
             event_queue: EventQueue::new(),
+            relationship_store: RelationshipStore::new(),
         }
     }
 
@@ -65,6 +67,7 @@ impl Ecs {
             let ctx = ExecutionContext {
                 command_buffer: &self.pending_commands,
                 entity_store: &self.entity_store,
+                relationship_store: &self.relationship_store,
                 resources: &self.resources,
                 event_queue: &self.event_queue,
             };
@@ -79,6 +82,7 @@ impl Ecs {
                 let ctx = ExecutionContext {
                     command_buffer: &self.pending_commands,
                     entity_store: &self.entity_store,
+                    relationship_store: &self.relationship_store,
                     resources: &self.resources,
                     event_queue: &self.event_queue,
                 };
@@ -97,6 +101,13 @@ impl Ecs {
         ED: EntityDefinition,
     {
         self.entity_store.insert(entity)
+    }
+
+    pub fn insert_relationship<R>(&mut self, source: EntityId, target: EntityId)
+    where
+        R: Relationship,
+    {
+        self.relationship_store.insert::<R>(source, target);
     }
 
     pub fn insert_resource<R>(&mut self, resource: R)
@@ -170,6 +181,7 @@ mod tests {
 
     use crate::{
         event::{EventReader, EventWriter},
+        query::Q,
         system::ResMut,
     };
 
@@ -189,6 +201,26 @@ mod tests {
         ecs.insert((Player, Health(10)));
         ecs.insert((Player, Health(10)));
         assert_eq!(ecs.entity_count(), 3);
+    }
+
+    #[test]
+    fn insert_entities_with_relationship() {
+        struct ChildOf;
+        #[derive(Debug)]
+        struct Hat;
+
+        let mut ecs = Ecs::new();
+        assert_eq!(ecs.entity_count(), 0);
+        let player = ecs.insert((Player, Health(10)));
+        ecs.insert((Hat,));
+        let hat = ecs.insert((Hat,));
+        let hat2 = ecs.insert((Hat,));
+        ecs.insert_relationship::<ChildOf>(hat, player);
+        ecs.insert_relationship::<ChildOf>(hat2, player);
+
+        let q = Q::<(&Hat,)>::new(&ecs.entity_store, &ecs.relationship_store)
+            .with_relationship::<ChildOf>(player);
+        assert_eq!(q.iter().count(), 2);
     }
 
     #[test]

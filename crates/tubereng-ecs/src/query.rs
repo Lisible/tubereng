@@ -3,14 +3,25 @@ use std::{
     marker::PhantomData,
 };
 
-use crate::entity::EntityStore;
+use crate::{
+    entity::EntityStore,
+    relationship::{Relationship, RelationshipId, RelationshipStore},
+    EntityId,
+};
 
 pub struct Q<'q, QD>
 where
     QD: Query<'q>,
 {
     entity_store: &'q EntityStore,
+    relationship_store: &'q RelationshipStore,
+    relationship_filters: Vec<RelationshipFilter>,
     _marker: PhantomData<QD>,
+}
+
+struct RelationshipFilter {
+    relationship_id: RelationshipId,
+    target_entity: EntityId,
 }
 
 impl<'q, QD> Q<'q, QD>
@@ -18,19 +29,35 @@ where
     QD: Query<'q>,
 {
     #[must_use]
-    pub fn new(entity_store: &'q EntityStore) -> Self {
+    pub fn new(entity_store: &'q EntityStore, relationship_store: &'q RelationshipStore) -> Self {
         Self {
             entity_store,
+            relationship_store,
+            relationship_filters: vec![],
             _marker: PhantomData,
         }
+    }
+
+    #[must_use]
+    pub fn with_relationship<R>(mut self, entity_id: EntityId) -> Self
+    where
+        R: 'static + Relationship,
+    {
+        self.relationship_filters.push(RelationshipFilter {
+            relationship_id: R::relationship_id(),
+            target_entity: entity_id,
+        });
+        self
     }
 
     #[must_use]
     pub fn iter(self) -> Iter<'q, QD> {
         Iter {
             current_index: 0,
-            ecs: self.entity_store,
+            relationship_filters: self.relationship_filters,
+            entity_store: self.entity_store,
             _marker: PhantomData,
+            relationship_store: self.relationship_store,
         }
     }
 }
@@ -40,8 +67,10 @@ where
     QD: Query<'q>,
 {
     current_index: usize,
-    ecs: &'q EntityStore,
+    entity_store: &'q EntityStore,
+    relationship_store: &'q RelationshipStore,
     _marker: PhantomData<&'q QD>,
+    relationship_filters: Vec<RelationshipFilter>,
 }
 
 impl<'q, QD> Iterator for Iter<'q, QD>
@@ -51,18 +80,28 @@ where
     type Item = QD::ResultType;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.current_index >= self.ecs.entity_count() {
+        if self.current_index >= self.entity_store.entity_count() {
             return None;
         }
 
-        let mut result = QD::fetch(self.ecs, self.current_index);
+        let mut result = QD::fetch(self.entity_store, self.current_index);
         while result.is_none() {
             self.current_index += 1;
-            if self.current_index >= self.ecs.entity_count() {
+            if self.current_index >= self.entity_store.entity_count() {
                 return None;
             }
 
-            result = QD::fetch(self.ecs, self.current_index);
+            if !self.relationship_filters.iter().all(|filter| {
+                self.relationship_store.has(
+                    filter.relationship_id,
+                    self.current_index,
+                    filter.target_entity,
+                )
+            }) {
+                continue;
+            }
+
+            result = QD::fetch(self.entity_store, self.current_index);
         }
 
         self.current_index += 1;
@@ -157,9 +196,9 @@ mod tests {
         ecs.insert((Player, Health(10)));
         ecs.insert((Player, Health(8)));
 
-        let query = Q::<(&Player, &Health)>::new(&ecs.entity_store);
+        let query = Q::<(&Player, &Health)>::new(&ecs.entity_store, &ecs.relationship_store);
         assert_eq!(query.iter().count(), 2);
-        let query = Q::<(&Player, &Health)>::new(&ecs.entity_store);
+        let query = Q::<(&Player, &Health)>::new(&ecs.entity_store, &ecs.relationship_store);
         for (_player, health) in query.iter() {
             assert!(health.0 >= 8);
         }
@@ -171,7 +210,8 @@ mod tests {
         ecs.insert((Player, Health(10)));
         ecs.insert((Health(8),));
 
-        let query = Q::<(Option<&Player>, &Health)>::new(&ecs.entity_store);
+        let query =
+            Q::<(Option<&Player>, &Health)>::new(&ecs.entity_store, &ecs.relationship_store);
         assert_eq!(query.iter().count(), 2);
     }
 
@@ -181,7 +221,8 @@ mod tests {
         ecs.insert((Player, Health(10)));
         ecs.insert((Health(8),));
 
-        let query = Q::<(Option<&mut Player>, &Health)>::new(&ecs.entity_store);
+        let query =
+            Q::<(Option<&mut Player>, &Health)>::new(&ecs.entity_store, &ecs.relationship_store);
         assert_eq!(query.iter().count(), 2);
     }
 
@@ -191,16 +232,18 @@ mod tests {
         ecs.insert((Player, Health(10)));
         ecs.insert((Player, Health(8)));
 
-        let query_mutate_health = Q::<(&Player, &mut Health)>::new(&ecs.entity_store);
+        let query_mutate_health =
+            Q::<(&Player, &mut Health)>::new(&ecs.entity_store, &ecs.relationship_store);
         assert_eq!(query_mutate_health.iter().count(), 2);
-        let query_mutate_health = Q::<(&Player, &mut Health)>::new(&ecs.entity_store);
+        let query_mutate_health =
+            Q::<(&Player, &mut Health)>::new(&ecs.entity_store, &ecs.relationship_store);
         for (_player, mut health) in query_mutate_health.iter() {
             health.0 = 0;
         }
 
-        let query_health = Q::<(&Player, &Health)>::new(&ecs.entity_store);
+        let query_health = Q::<(&Player, &Health)>::new(&ecs.entity_store, &ecs.relationship_store);
         assert_eq!(query_health.iter().count(), 2);
-        let query_health = Q::<(&Player, &Health)>::new(&ecs.entity_store);
+        let query_health = Q::<(&Player, &Health)>::new(&ecs.entity_store, &ecs.relationship_store);
         for (_player, health) in query_health.iter() {
             assert_eq!(health.0, 0);
         }
