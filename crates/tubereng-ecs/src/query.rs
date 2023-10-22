@@ -15,13 +15,23 @@ where
 {
     entity_store: &'q EntityStore,
     relationship_store: &'q RelationshipStore,
-    relationship_filters: Vec<RelationshipFilter>,
+    relationship_filters: Vec<Box<dyn RelationshipFilter>>,
     _marker: PhantomData<QD>,
 }
 
-struct RelationshipFilter {
+trait RelationshipFilter {
+    fn is_valid(&self, relationship_store: &RelationshipStore, index: EntityId) -> bool;
+}
+
+struct WithRelationshipFilter {
     relationship_id: RelationshipId,
     target_entity: EntityId,
+}
+
+impl RelationshipFilter for WithRelationshipFilter {
+    fn is_valid(&self, relationship_store: &RelationshipStore, index: EntityId) -> bool {
+        relationship_store.has(self.relationship_id, index, self.target_entity)
+    }
 }
 
 impl<'q, QD> Q<'q, QD>
@@ -39,20 +49,34 @@ where
     }
 
     #[must_use]
+    pub fn with_id(self, entity_id: EntityId) -> Option<QD::ResultType> {
+        if self
+            .relationship_filters
+            .iter()
+            .any(|filter| !filter.is_valid(self.relationship_store, entity_id))
+        {
+            return None;
+        }
+
+        QD::fetch(self.entity_store, entity_id)
+    }
+
+    #[must_use]
     pub fn with_relationship<R>(mut self, entity_id: EntityId) -> Self
     where
         R: 'static + Relationship,
     {
-        self.relationship_filters.push(RelationshipFilter {
-            relationship_id: R::relationship_id(),
-            target_entity: entity_id,
-        });
+        self.relationship_filters
+            .push(Box::new(WithRelationshipFilter {
+                relationship_id: R::relationship_id(),
+                target_entity: entity_id,
+            }));
         self
     }
 
     #[must_use]
-    pub fn iter(self) -> Iter<'q, QD> {
-        Iter {
+    pub fn iter_with_indices(self) -> IterWithIndices<'q, QD> {
+        IterWithIndices {
             current_index: 0,
             relationship_filters: self.relationship_filters,
             entity_store: self.entity_store,
@@ -60,9 +84,20 @@ where
             relationship_store: self.relationship_store,
         }
     }
+
+    #[must_use]
+    pub fn iter(self) -> Iter<'q, QD> {
+        Iter(IterWithIndices {
+            current_index: 0,
+            relationship_filters: self.relationship_filters,
+            entity_store: self.entity_store,
+            _marker: PhantomData,
+            relationship_store: self.relationship_store,
+        })
+    }
 }
 
-pub struct Iter<'q, QD>
+pub struct IterWithIndices<'q, QD>
 where
     QD: Query<'q>,
 {
@@ -70,14 +105,14 @@ where
     entity_store: &'q EntityStore,
     relationship_store: &'q RelationshipStore,
     _marker: PhantomData<&'q QD>,
-    relationship_filters: Vec<RelationshipFilter>,
+    relationship_filters: Vec<Box<dyn RelationshipFilter>>,
 }
 
-impl<'q, QD> Iterator for Iter<'q, QD>
+impl<'q, QD> Iterator for IterWithIndices<'q, QD>
 where
     QD: Query<'q>,
 {
-    type Item = QD::ResultType;
+    type Item = (EntityId, QD::ResultType);
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.current_index >= self.entity_store.entity_count() {
@@ -91,21 +126,35 @@ where
                 return None;
             }
 
-            if !self.relationship_filters.iter().all(|filter| {
-                self.relationship_store.has(
-                    filter.relationship_id,
-                    self.current_index,
-                    filter.target_entity,
-                )
-            }) {
+            if !self
+                .relationship_filters
+                .iter()
+                .all(|filter| filter.is_valid(self.relationship_store, self.current_index))
+            {
                 continue;
             }
 
             result = QD::fetch(self.entity_store, self.current_index);
         }
 
+        let index = self.current_index;
         self.current_index += 1;
-        result
+        Some((index, result.unwrap()))
+    }
+}
+
+pub struct Iter<'q, QD>(IterWithIndices<'q, QD>)
+where
+    QD: Query<'q>;
+
+impl<'q, QD> Iterator for Iter<'q, QD>
+where
+    QD: Query<'q>,
+{
+    type Item = QD::ResultType;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next().map(|res| res.1)
     }
 }
 

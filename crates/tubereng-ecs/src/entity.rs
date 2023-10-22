@@ -1,7 +1,7 @@
 use std::{
     any::{Any, TypeId},
     cell::{Ref, RefCell, RefMut},
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     rc::Rc,
 };
 
@@ -30,6 +30,11 @@ impl EntityStore {
     #[must_use]
     pub fn entity_count(&self) -> usize {
         self.next_entity_id
+    }
+
+    #[must_use]
+    pub fn entity_ids(&self) -> HashSet<EntityId> {
+        (0..self.next_entity_id).collect()
     }
 
     fn allocate_entity(&mut self) -> EntityId {

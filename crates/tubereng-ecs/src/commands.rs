@@ -1,4 +1,10 @@
-use std::{any::Any, cell::RefCell, marker::PhantomData, rc::Rc};
+use std::{
+    any::Any,
+    cell::RefCell,
+    marker::PhantomData,
+    rc::Rc,
+    sync::atomic::{AtomicUsize, Ordering},
+};
 
 use crate::{
     entity::EntityId,
@@ -8,13 +14,15 @@ use crate::{
 };
 
 pub struct CommandBuffer {
+    next_entity_id: AtomicUsize,
     commands: Rc<RefCell<Vec<Box<dyn Command>>>>,
 }
 
 impl CommandBuffer {
     #[must_use]
-    pub fn new() -> Self {
+    pub fn new(next_entity_id: usize) -> Self {
         Self {
+            next_entity_id: AtomicUsize::new(next_entity_id),
             commands: Rc::new(RefCell::new(Vec::new())),
         }
     }
@@ -23,23 +31,14 @@ impl CommandBuffer {
         self.commands.borrow_mut().clear();
     }
 
-    pub fn insert<ED>(&self, entity: ED)
+    pub fn insert<ED>(&self, entity: ED) -> EntityId
     where
         ED: 'static + EntityDefinition,
     {
         self.commands
             .borrow_mut()
-            .push(Box::new(InsertEntity::new(entity, |_, _| {})));
-    }
-
-    pub fn insert_and_then<ED, F>(&self, entity: ED, callback: F)
-    where
-        ED: 'static + EntityDefinition,
-        F: 'static + Fn(EntityId, &CommandBuffer),
-    {
-        self.commands
-            .borrow_mut()
-            .push(Box::new(InsertEntity::new(entity, callback)));
+            .push(Box::new(InsertEntity::new(entity)));
+        self.next_entity_id.fetch_add(1, Ordering::Relaxed)
     }
 
     pub fn insert_relationship<R>(&self, source: EntityId, target: EntityId)
@@ -91,46 +90,34 @@ impl CommandBuffer {
     }
 }
 
-impl Default for CommandBuffer {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 pub trait Command {
     fn apply(&mut self, ecs: &mut Ecs);
 }
 
-pub struct InsertEntity<ED, F>
+pub struct InsertEntity<ED>
 where
     ED: EntityDefinition,
-    F: Fn(EntityId, &CommandBuffer),
 {
     entity: Option<ED>,
-    callback: F,
 }
 
-impl<ED, F> InsertEntity<ED, F>
+impl<ED> InsertEntity<ED>
 where
     ED: EntityDefinition,
-    F: Fn(EntityId, &CommandBuffer),
 {
-    pub fn new(entity: ED, callback: F) -> Self {
+    pub fn new(entity: ED) -> Self {
         Self {
             entity: Some(entity),
-            callback,
         }
     }
 }
 
-impl<ED, F> Command for InsertEntity<ED, F>
+impl<ED> Command for InsertEntity<ED>
 where
     ED: EntityDefinition,
-    F: Fn(EntityId, &CommandBuffer),
 {
     fn apply(&mut self, ecs: &mut Ecs) {
-        let id = ecs.insert(self.entity.take().unwrap());
-        (self.callback)(id, &ecs.pending_commands);
+        ecs.insert(self.entity.take().unwrap());
     }
 }
 
@@ -240,12 +227,12 @@ mod tests {
     fn apply_insert_entity_command() {
         let mut ecs = Ecs::new();
         assert_eq!(ecs.entity_count(), 0);
-        let mut insert_entity_command = InsertEntity::new((Player, Health(10)), |_, _| {});
+        let mut insert_entity_command = InsertEntity::new((Player, Health(10)));
         insert_entity_command.apply(&mut ecs);
         assert_eq!(ecs.entity_count(), 1);
-        let mut insert_entity_command = InsertEntity::new((Player, Health(10)), |_, _| {});
+        let mut insert_entity_command = InsertEntity::new((Player, Health(10)));
         insert_entity_command.apply(&mut ecs);
-        let mut insert_entity_command = InsertEntity::new((Player, Health(10)), |_, _| {});
+        let mut insert_entity_command = InsertEntity::new((Player, Health(10)));
         insert_entity_command.apply(&mut ecs);
         assert_eq!(ecs.entity_count(), 3);
     }

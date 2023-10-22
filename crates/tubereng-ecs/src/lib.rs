@@ -37,7 +37,7 @@ impl Ecs {
     pub fn new() -> Ecs {
         Self {
             entity_store: EntityStore::new(),
-            pending_commands: CommandBuffer::new(),
+            pending_commands: CommandBuffer::new(0),
             setup_system: None,
             system_sets: vec![],
             resources: Resources::new(),
@@ -138,7 +138,7 @@ impl Ecs {
     }
 
     pub fn execute_pending_commands(&mut self) {
-        let mut pending_commands = CommandBuffer::new();
+        let mut pending_commands = CommandBuffer::new(self.entity_count());
 
         // We should probably improve this later,
         // If the callback of a pending command inserts new command, they will

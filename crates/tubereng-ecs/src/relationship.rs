@@ -5,7 +5,7 @@ use std::{
 
 use crate::entity::EntityId;
 
-/// The ChildOf relationship
+/// The `ChildOf` relationship
 pub struct ChildOf;
 
 pub struct RelationshipStore {
@@ -45,6 +45,41 @@ impl RelationshipStore {
         };
 
         relationship.has_source(target, source)
+    }
+
+    #[must_use]
+    pub fn all_sources_of<R>(&self) -> HashSet<EntityId>
+    where
+        R: Relationship,
+    {
+        let Some(relationship) = self.relationships.get(&R::relationship_id()) else {
+            return HashSet::new()
+        };
+
+        relationship
+            .sources_by_target
+            .values()
+            .flat_map(|v| v.iter().copied())
+            .clone()
+            .collect::<HashSet<_>>()
+    }
+
+    #[must_use]
+    pub fn sources_of<R>(&self, target: EntityId) -> Vec<EntityId>
+    where
+        R: Relationship,
+    {
+        let Some(relationship) = self.relationships.get(&R::relationship_id()) else {
+            return vec![];
+        };
+
+        relationship
+            .sources_by_target
+            .get(&target)
+            .unwrap_or(&HashSet::new())
+            .iter()
+            .copied()
+            .collect::<Vec<_>>()
     }
 }
 

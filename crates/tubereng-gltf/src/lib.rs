@@ -1,6 +1,6 @@
 #![warn(clippy::pedantic)]
 
-use std::{io::Read, mem::MaybeUninit};
+use std::io::Read;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JSONValue;

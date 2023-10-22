@@ -8,6 +8,7 @@ use tubereng::{
         commands::CommandBuffer,
         event::EventWriter,
         query::Q,
+        relationship::ChildOf,
         system::{Res, ResMut},
     },
     engine::{Engine, EngineBuilder, ExitRequest},
@@ -75,7 +76,7 @@ fn setup(command_buffer: &CommandBuffer, asset_store: ResMut<AssetStore>) {
             ..Default::default()
         },
     ));
-    command_buffer.insert((
+    let mut cone = command_buffer.insert((
         cone_model,
         material,
         Transform {
@@ -83,6 +84,19 @@ fn setup(command_buffer: &CommandBuffer, asset_store: ResMut<AssetStore>) {
             ..Default::default()
         },
     ));
+
+    for _ in 0..50 {
+        let child_cone = command_buffer.insert((
+            cone_model,
+            material,
+            Transform {
+                translation: Vector3f::new(0.0, 1.75, 0.0),
+                ..Default::default()
+            },
+        ));
+        command_buffer.insert_relationship::<ChildOf>(child_cone, cone);
+        cone = child_cone;
+    }
     command_buffer.insert((
         cube_model,
         material2,
