@@ -98,6 +98,7 @@ where
         renderer
             .prepare_render(
                 self.ecs.entity_store(),
+                self.ecs.relationship_store(),
                 &mut self
                     .ecs
                     .resource_mut::<AssetStore>()

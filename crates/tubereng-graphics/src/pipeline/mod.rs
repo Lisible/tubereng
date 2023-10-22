@@ -2,7 +2,7 @@ use crate::{texture::TextureCache, RenderingContext, Result};
 use std::collections::HashMap;
 
 use tubereng_assets::AssetStore;
-use tubereng_ecs::entity::EntityStore;
+use tubereng_ecs::{entity::EntityStore, relationship::RelationshipStore};
 
 pub mod default_pipeline;
 
@@ -22,6 +22,7 @@ pub trait RenderPipeline {
         &mut self,
         rendering_context: &mut RenderingContext,
         entity_store: &EntityStore,
+        relationship_store: &RelationshipStore,
         asset_store: &mut AssetStore,
     ) -> Result<()>;
 

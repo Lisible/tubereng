@@ -11,7 +11,7 @@ use std::collections::HashMap;
 
 use tubereng_assets::{AssetHandle, AssetStore};
 use tubereng_core::Transform;
-use tubereng_ecs::{entity::EntityStore, query::Q};
+use tubereng_ecs::{entity::EntityStore, query::Q, relationship::RelationshipStore};
 use tubereng_math::matrix::{Identity, Matrix4f};
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 
@@ -254,10 +254,14 @@ impl DefaultRenderPipeline {
             );
     }
 
-    fn extract_lights(&mut self, entity_store: &EntityStore) {
+    fn extract_lights(
+        &mut self,
+        entity_store: &EntityStore,
+        relationship_store: &RelationshipStore,
+    ) {
         self.light_storage.point_light_count = 0;
         for (i, (point_light, transform)) in
-            Q::<(&crate::light::PointLight, &Transform)>::new(entity_store)
+            Q::<(&crate::light::PointLight, &Transform)>::new(entity_store, relationship_store)
                 .iter()
                 .take(10)
                 .enumerate()
@@ -405,9 +409,11 @@ impl RenderPipeline for DefaultRenderPipeline {
         &mut self,
         ctx: &mut RenderingContext,
         entity_store: &EntityStore,
+        relationship_store: &RelationshipStore,
         asset_store: &mut AssetStore,
     ) -> Result<()> {
-        let camera_query = Q::<(&ActiveCamera, &Camera, &Transform)>::new(entity_store);
+        let camera_query =
+            Q::<(&ActiveCamera, &Camera, &Transform)>::new(entity_store, relationship_store);
         let (_, camera, camera_transform) = camera_query.iter().next().expect("Camera not found");
         let camera_view_projection_matrix = OPENGL_TO_WGPU_MATRIX
             * *camera.projection_matrix()
@@ -437,7 +443,7 @@ impl RenderPipeline for DefaultRenderPipeline {
             &AssetHandle<MeshAsset>,
             &AssetHandle<MaterialAsset>,
             &Transform,
-        )>::new(entity_store)
+        )>::new(entity_store, relationship_store)
         .iter()
         .enumerate()
         {
@@ -493,7 +499,7 @@ impl RenderPipeline for DefaultRenderPipeline {
             }
         }
 
-        self.extract_lights(entity_store);
+        self.extract_lights(entity_store, relationship_store);
 
         ctx.queue.write_buffer(
             &self.light_storage_buffer,

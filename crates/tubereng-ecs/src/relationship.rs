@@ -5,6 +5,9 @@ use std::{
 
 use crate::entity::EntityId;
 
+/// The ChildOf relationship
+pub struct ChildOf;
+
 pub struct RelationshipStore {
     relationships: HashMap<RelationshipId, RelationshipData>,
 }

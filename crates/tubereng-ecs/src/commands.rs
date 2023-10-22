@@ -1,6 +1,8 @@
-use std::{any::Any, cell::RefCell, rc::Rc};
+use std::{any::Any, cell::RefCell, marker::PhantomData, rc::Rc};
 
 use crate::{
+    entity::EntityId,
+    relationship::Relationship,
     system::{Into, System, SystemSet},
     Ecs, EntityDefinition,
 };
@@ -27,7 +29,26 @@ impl CommandBuffer {
     {
         self.commands
             .borrow_mut()
-            .push(Box::new(InsertEntity::new(entity)));
+            .push(Box::new(InsertEntity::new(entity, |_, _| {})));
+    }
+
+    pub fn insert_and_then<ED, F>(&self, entity: ED, callback: F)
+    where
+        ED: 'static + EntityDefinition,
+        F: 'static + Fn(EntityId, &CommandBuffer),
+    {
+        self.commands
+            .borrow_mut()
+            .push(Box::new(InsertEntity::new(entity, callback)));
+    }
+
+    pub fn insert_relationship<R>(&self, source: EntityId, target: EntityId)
+    where
+        R: Relationship,
+    {
+        self.commands
+            .borrow_mut()
+            .push(Box::new(InsertRelationship::<R>::new(source, target)));
     }
 
     pub fn insert_resource<R>(&self, resource: R)
@@ -80,30 +101,65 @@ pub trait Command {
     fn apply(&mut self, ecs: &mut Ecs);
 }
 
-pub struct InsertEntity<ED>
+pub struct InsertEntity<ED, F>
 where
     ED: EntityDefinition,
+    F: Fn(EntityId, &CommandBuffer),
 {
     entity: Option<ED>,
+    callback: F,
 }
 
-impl<ED> InsertEntity<ED>
+impl<ED, F> InsertEntity<ED, F>
 where
     ED: EntityDefinition,
+    F: Fn(EntityId, &CommandBuffer),
 {
-    pub fn new(entity: ED) -> Self {
+    pub fn new(entity: ED, callback: F) -> Self {
         Self {
             entity: Some(entity),
+            callback,
         }
     }
 }
 
-impl<ED> Command for InsertEntity<ED>
+impl<ED, F> Command for InsertEntity<ED, F>
 where
     ED: EntityDefinition,
+    F: Fn(EntityId, &CommandBuffer),
 {
     fn apply(&mut self, ecs: &mut Ecs) {
-        ecs.insert(self.entity.take().unwrap());
+        let id = ecs.insert(self.entity.take().unwrap());
+        (self.callback)(id, &ecs.pending_commands);
+    }
+}
+
+pub struct InsertRelationship<R> {
+    source: EntityId,
+    target: EntityId,
+    _marker: PhantomData<R>,
+}
+
+impl<R> InsertRelationship<R> {
+    #[must_use]
+    pub fn new(source: EntityId, target: EntityId) -> Self
+    where
+        R: Relationship,
+    {
+        Self {
+            source,
+            target,
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<R> Command for InsertRelationship<R>
+where
+    R: Relationship,
+{
+    fn apply(&mut self, ecs: &mut Ecs) {
+        ecs.insert_relationship::<R>(self.source, self.target);
     }
 }
 
@@ -184,12 +240,12 @@ mod tests {
     fn apply_insert_entity_command() {
         let mut ecs = Ecs::new();
         assert_eq!(ecs.entity_count(), 0);
-        let mut insert_entity_command = InsertEntity::new((Player, Health(10)));
+        let mut insert_entity_command = InsertEntity::new((Player, Health(10)), |_, _| {});
         insert_entity_command.apply(&mut ecs);
         assert_eq!(ecs.entity_count(), 1);
-        let mut insert_entity_command = InsertEntity::new((Player, Health(10)));
+        let mut insert_entity_command = InsertEntity::new((Player, Health(10)), |_, _| {});
         insert_entity_command.apply(&mut ecs);
-        let mut insert_entity_command = InsertEntity::new((Player, Health(10)));
+        let mut insert_entity_command = InsertEntity::new((Player, Health(10)), |_, _| {});
         insert_entity_command.apply(&mut ecs);
         assert_eq!(ecs.entity_count(), 3);
     }

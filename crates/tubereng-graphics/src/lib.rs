@@ -7,7 +7,7 @@ use pipeline::RenderPipeline;
 use std::{collections::HashMap, future::Future};
 use texture::TextureCache;
 use tubereng_assets::{AssetHandle, AssetStore};
-use tubereng_ecs::entity::EntityStore;
+use tubereng_ecs::{entity::EntityStore, relationship::RelationshipStore};
 use winit::{dpi::PhysicalSize, window::Window};
 
 pub type Result<T> = std::result::Result<T, GraphicsError>;
@@ -176,10 +176,15 @@ where
     pub fn prepare_render(
         &mut self,
         entity_store: &EntityStore,
+        relationship_store: &RelationshipStore,
         asset_store: &mut AssetStore,
     ) -> Result<()> {
-        self.pipeline
-            .prepare(&mut self.rendering_context, entity_store, asset_store)
+        self.pipeline.prepare(
+            &mut self.rendering_context,
+            entity_store,
+            relationship_store,
+            asset_store,
+        )
     }
 
     /// # Errors

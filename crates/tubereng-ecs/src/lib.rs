@@ -50,6 +50,10 @@ impl Ecs {
     pub fn entity_store(&self) -> &EntityStore {
         &self.entity_store
     }
+    #[must_use]
+    pub fn relationship_store(&self) -> &RelationshipStore {
+        &self.relationship_store
+    }
 
     pub fn register_setup_system(&mut self, setup_system: Box<dyn System>) {
         info!("Registering setup system...");
@@ -135,9 +139,16 @@ impl Ecs {
 
     pub fn execute_pending_commands(&mut self) {
         let mut pending_commands = CommandBuffer::new();
-        std::mem::swap(&mut self.pending_commands, &mut pending_commands);
-        for mut command in pending_commands.flush_commands() {
-            command.apply(self);
+
+        // We should probably improve this later,
+        // If the callback of a pending command inserts new command, they will
+        // go in self.pending_commands, so we continuously swap them for each
+        // nested callback depth
+        while !self.pending_commands.is_empty() {
+            std::mem::swap(&mut self.pending_commands, &mut pending_commands);
+            for mut command in pending_commands.flush_commands() {
+                command.apply(self);
+            }
         }
     }
 
@@ -182,6 +193,7 @@ mod tests {
     use crate::{
         event::{EventReader, EventWriter},
         query::Q,
+        relationship::ChildOf,
         system::ResMut,
     };
 
@@ -229,7 +241,6 @@ mod tests {
 
         assert_eq!(ecs.entity_count(), 0);
         let add_entity = |command_buffer: &CommandBuffer| {
-            command_buffer.insert((Player, Health(10)));
             command_buffer.insert((Player, Health(9)));
         };
 
@@ -242,6 +253,37 @@ mod tests {
         ecs.execute_pending_commands();
         assert_eq!(ecs.pending_commands.len(), 0);
         assert_eq!(ecs.entity_count(), 2);
+    }
+
+    #[test]
+    fn run_system_adding_entities_with_relationship() {
+        #[derive(Debug)]
+        struct Hat;
+
+        let mut ecs = Ecs::new();
+
+        let add_relationship = |command_buffer: &CommandBuffer| {
+            command_buffer.insert_and_then((Player, Health(9)), |parent_id, cb| {
+                cb.insert_and_then((Hat,), move |child_id, cb| {
+                    cb.insert_relationship::<ChildOf>(child_id, parent_id);
+                });
+            });
+        };
+
+        let mut system_set = SystemSet::new();
+        system_set.add_system(add_relationship);
+        ecs.register_system_set(system_set);
+        let query = Q::<(&Hat,)>::new(&ecs.entity_store, &ecs.relationship_store)
+            .with_relationship::<ChildOf>(0);
+
+        assert_eq!(query.iter().count(), 0);
+
+        ecs.run_systems();
+        ecs.execute_pending_commands();
+
+        let query = Q::<(&Hat,)>::new(&ecs.entity_store, &ecs.relationship_store)
+            .with_relationship::<ChildOf>(0);
+        assert_eq!(query.iter().count(), 1);
     }
 
     #[test]
