@@ -242,6 +242,7 @@ mod tests {
         assert_eq!(ecs.entity_count(), 0);
         let add_entity = |command_buffer: &CommandBuffer| {
             command_buffer.insert((Player, Health(9)));
+            command_buffer.insert((Player, Health(9)));
         };
 
         let mut system_set = SystemSet::new();
@@ -263,11 +264,9 @@ mod tests {
         let mut ecs = Ecs::new();
 
         let add_relationship = |command_buffer: &CommandBuffer| {
-            command_buffer.insert_and_then((Player, Health(9)), |parent_id, cb| {
-                cb.insert_and_then((Hat,), move |child_id, cb| {
-                    cb.insert_relationship::<ChildOf>(child_id, parent_id);
-                });
-            });
+            let parent_id = command_buffer.insert((Player, Health(9)));
+            let child_id = command_buffer.insert((Hat,));
+            command_buffer.insert_relationship::<ChildOf>(child_id, parent_id);
         };
 
         let mut system_set = SystemSet::new();
@@ -300,6 +299,7 @@ mod tests {
         system_set.add_system(emit_exit_event);
         ecs.register_system_set(system_set);
         ecs.run_systems();
+        ecs.event_queue.swap_and_clear();
 
         assert!(!ecs.event_queue.is_empty());
     }

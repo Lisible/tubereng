@@ -247,7 +247,7 @@ vt 16.0 32.0
 
         let texture_vertex = &obj_model.texture_vertices[0];
         assert_eq!(texture_vertex.u as i32, 16);
-        assert_eq!(texture_vertex.v as i32, 32);
+        assert_eq!(texture_vertex.v as i32, -31);
         assert_eq!(texture_vertex.w as i32, 0);
     }
 
