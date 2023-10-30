@@ -11,7 +11,7 @@ pub struct MeshAsset {
 #[derive(Debug)]
 pub struct MeshDescription {
     pub vertices: Vec<Vertex>,
-    pub indices: Option<Vec<u16>>,
+    pub indices: Option<Vec<Index>>,
 }
 
 impl Asset for MeshAsset {
@@ -150,6 +150,8 @@ pub struct Mesh {
     pub vertex_count: u32,
     pub element_count: u32,
 }
+
+pub type Index = u16;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]

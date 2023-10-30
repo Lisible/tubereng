@@ -1,6 +1,22 @@
 use std::fmt::Display;
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
+pub trait OneQuarter {
+    fn one_quarter() -> Self;
+}
+
+impl OneQuarter for f32 {
+    fn one_quarter() -> Self {
+        0.25
+    }
+}
+
+impl OneQuarter for f64 {
+    fn one_quarter() -> Self {
+        0.25
+    }
+}
+
 pub trait Two {
     fn two() -> Self;
 }
@@ -116,6 +132,7 @@ pub trait NumericOps:
     + Div<Output = Self>
     + DivAssign
     + Neg<Output = Self>
+    + PartialOrd
 {
 }
 
@@ -125,7 +142,7 @@ impl NumericOps for f32 {}
 
 impl NumericOps for f64 {}
 
-pub trait Float: Display + Copy + Zero + One + Two + Pi + NumericOps {
+pub trait Float: Display + Copy + Zero + One + Two + OneQuarter + Pi + NumericOps {
     fn sin(self) -> Self;
     fn cos(self) -> Self;
     fn tan(self) -> Self;

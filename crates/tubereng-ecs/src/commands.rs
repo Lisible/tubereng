@@ -41,6 +41,12 @@ impl CommandBuffer {
         self.next_entity_id.fetch_add(1, Ordering::Relaxed)
     }
 
+    pub fn add_component<C: 'static>(&self, entity_id: EntityId, component: C) {
+        self.commands
+            .borrow_mut()
+            .push(Box::new(InsertComponent::new(entity_id, component)));
+    }
+
     pub fn insert_relationship<R>(&self, source: EntityId, target: EntityId)
     where
         R: Relationship,
@@ -118,6 +124,29 @@ where
 {
     fn apply(&mut self, ecs: &mut Ecs) {
         ecs.insert(self.entity.take().unwrap());
+    }
+}
+
+pub struct InsertComponent<C> {
+    entity_id: EntityId,
+    component: Option<C>,
+}
+
+impl<C> InsertComponent<C> {
+    pub fn new(entity_id: EntityId, component: C) -> Self {
+        InsertComponent {
+            entity_id,
+            component: Some(component),
+        }
+    }
+}
+
+impl<C> Command for InsertComponent<C>
+where
+    C: 'static,
+{
+    fn apply(&mut self, ecs: &mut Ecs) {
+        ecs.insert_component(self.entity_id, self.component.take().unwrap());
     }
 }
 

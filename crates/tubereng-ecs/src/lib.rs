@@ -107,6 +107,10 @@ impl Ecs {
         self.entity_store.insert(entity)
     }
 
+    pub fn insert_component<C: 'static>(&mut self, entity_id: EntityId, component: C) {
+        self.entity_store.write_component(entity_id, component);
+    }
+
     pub fn insert_relationship<R>(&mut self, source: EntityId, target: EntityId)
     where
         R: Relationship,
@@ -168,6 +172,10 @@ impl Default for Ecs {
 
 pub trait EntityDefinition: Debug {
     fn write_into_entity_store(self, entity_store: &mut EntityStore, entity_id: EntityId);
+}
+
+impl EntityDefinition for () {
+    fn write_into_entity_store(self, _entity_store: &mut EntityStore, _entity_id: EntityId) {}
 }
 
 macro_rules! impl_entity_definition_for_tuples {
@@ -355,5 +363,25 @@ mod tests {
 
         let turn = ecs.resource::<Turn>().unwrap();
         assert_eq!(turn.0, 1);
+    }
+
+    #[test]
+    fn insert_entity_and_add_component_later() {
+        #[derive(Debug)]
+        struct A;
+        #[derive(Debug)]
+        struct B;
+
+        let mut ecs = Ecs::new();
+        let entity = ecs.insert(());
+        ecs.insert_component(entity, Player);
+        assert!(matches!(
+            Q::<(Option<&A>, Option<&B>, &Player,)>::new(
+                &ecs.entity_store,
+                &ecs.relationship_store
+            )
+            .with_id(entity),
+            Some(_)
+        ));
     }
 }

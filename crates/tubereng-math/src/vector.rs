@@ -203,6 +203,15 @@ where
     }
 }
 
+impl<T> From<[T; 3]> for Vector3<T>
+where
+    T: Copy,
+{
+    fn from(value: [T; 3]) -> Self {
+        Self::new(value[0], value[1], value[2])
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

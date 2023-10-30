@@ -20,6 +20,33 @@ impl Transform {
     }
 }
 
+impl From<Matrix4f> for Transform {
+    fn from(value: Matrix4f) -> Self {
+        let translation = Vector3f::new(value[0][3], value[1][3], value[2][3]);
+        let scale = Vector3f::new(
+            Vector3f::new(value[0][0], value[1][0], value[2][0]).norm(),
+            Vector3f::new(value[0][1], value[1][1], value[2][1]).norm(),
+            Vector3f::new(value[0][2], value[1][2], value[2][2]).norm(),
+        );
+
+        #[rustfmt::skip]
+        let rotation_matrix = Matrix4f::with_values([
+           value[0][0]/scale.x, value[0][1]/scale.y, value[0][2]/scale.z, 0.0,
+           value[1][0]/scale.x, value[1][1]/scale.y, value[1][2]/scale.z, 0.0,
+           value[2][0]/scale.x, value[2][1]/scale.y, value[2][2]/scale.z, 0.0,
+           0.0, 0.0, 0.0, 1.0,
+        ]);
+
+        let rotation = rotation_matrix.into();
+
+        Self {
+            translation,
+            scale,
+            rotation,
+        }
+    }
+}
+
 impl Default for Transform {
     fn default() -> Self {
         Self {

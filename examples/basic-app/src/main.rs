@@ -12,6 +12,7 @@ use tubereng::{
         system::{Res, ResMut},
     },
     engine::{Engine, EngineBuilder, ExitRequest},
+    gltf::Gltf,
     graphics::{
         camera::{ActiveCamera, Camera, FlyCamera},
         geometry::{MeshAsset, MeshDescription, Vertex},
@@ -21,6 +22,7 @@ use tubereng::{
     },
     input::{keyboard::Key, InputState},
     math::{quaternion::Quaternion, vector::Vector3f},
+    scene::insert_gltf_to_scene,
     winit::WinitTuberRunner,
 };
 
@@ -68,6 +70,9 @@ fn setup(command_buffer: &CommandBuffer, asset_store: ResMut<AssetStore>) {
         .load::<MaterialAsset>("grass_material.ron")
         .unwrap();
 
+    let gltf = asset_store.load::<Gltf>("model.glb").unwrap();
+    let _scene_root = insert_gltf_to_scene(command_buffer, &mut asset_store, gltf, grass_material);
+
     command_buffer.insert((
         grid_mesh,
         grass_material,
@@ -114,6 +119,7 @@ fn setup(command_buffer: &CommandBuffer, asset_store: ResMut<AssetStore>) {
     command_buffer.register_system(exit);
 }
 
+#[allow(clippy::cast_precision_loss)]
 fn create_grid_mesh(width: usize, height: usize) -> MeshAsset {
     let mut vertices = vec![];
     let mut indices = vec![];

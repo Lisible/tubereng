@@ -456,8 +456,8 @@ impl RenderPipeline for DefaultRenderPipeline {
         let mut i = 0;
         while let Some((parent, entity)) = entities_to_process.pop() {
             let Some((mesh, material, transform)) = Q::<(
-                &AssetHandle<MeshAsset>,
-                &AssetHandle<MaterialAsset>,
+                Option<&AssetHandle<MeshAsset>>,
+                Option<&AssetHandle<MaterialAsset>>,
                 &Transform,
             )>::new(entity_store, relationship_store)
             .with_id(entity) else {
@@ -472,120 +472,73 @@ impl RenderPipeline for DefaultRenderPipeline {
                     .collect::<Vec<_>>(),
             );
 
-            let material_handle = *material;
-            if !ctx.material_cache.has(material_handle) {
-                ctx.material_cache.load(
-                    material_handle,
-                    asset_store,
-                    &mut ctx.texture_cache,
-                    &self.material_bind_group_layout,
-                    &ctx.device,
-                    &ctx.queue,
-                )?;
-            }
+            let material_handle = if let Some(material_handle) = material {
+                let material_handle = *material_handle;
+                if !ctx.material_cache.has(material_handle) {
+                    ctx.material_cache.load(
+                        material_handle,
+                        asset_store,
+                        &mut ctx.texture_cache,
+                        &self.material_bind_group_layout,
+                        &ctx.device,
+                        &ctx.queue,
+                    )?;
+                }
+                Some(material_handle)
+            } else {
+                None
+            };
 
-            let mesh_handle = *mesh;
-            if !ctx.model_cache.has(mesh_handle) {
-                ctx.model_cache.load(
-                    mesh_handle,
-                    asset_store,
-                    &mut ctx.vertex_buffers,
-                    &mut ctx.index_buffers,
-                    &ctx.device,
-                )?;
-            }
+            let mesh_handle = if let Some(mesh_handle) = mesh {
+                let mesh_handle = *mesh_handle;
+                if !ctx.model_cache.has(mesh_handle) {
+                    ctx.model_cache.load(
+                        mesh_handle,
+                        asset_store,
+                        &mut ctx.vertex_buffers,
+                        &mut ctx.index_buffers,
+                        &ctx.device,
+                    )?;
+                }
+                Some(mesh_handle)
+            } else {
+                None
+            };
 
             let mut transform_matrix = transform.as_matrix4();
             if let Some(parent) = parent {
                 transform_matrix *= transforms[parent];
             }
 
-            let model = ctx
-                .model_cache
-                .get(mesh_handle)
-                .expect("Model not found in cache");
-            for mesh in &model.meshes {
-                ctx.draw_commands.push(DrawCommand {
-                    vertex_buffer: mesh.vertex_buffer,
-                    index_buffer: mesh.index_buffer,
-                    element_count: mesh.element_count,
-                    vertex_count: mesh.vertex_count,
-                    material_handle,
-                });
-                model_uniforms.push(MeshUniform {
-                    world_transform: transform_matrix.into(),
-                    inverse_world_transform: transform_matrix.try_inverse().unwrap().into(),
-                    _padding: [0u64; 16],
-                });
-                transforms.push(transform_matrix);
+            if let Some(mesh_handle) = mesh_handle {
+                let model = ctx
+                    .model_cache
+                    .get(mesh_handle)
+                    .expect("Model not found in cache");
+                for mesh in &model.meshes {
+                    ctx.draw_commands.push(DrawCommand {
+                        vertex_buffer: mesh.vertex_buffer,
+                        index_buffer: mesh.index_buffer,
+                        element_count: mesh.element_count,
+                        vertex_count: mesh.vertex_count,
+                        material_handle: material_handle.unwrap(),
+                    });
+                    model_uniforms.push(MeshUniform {
+                        world_transform: transform_matrix.into(),
+                        inverse_world_transform: transform_matrix.try_inverse().unwrap().into(),
+                        _padding: [0u64; 16],
+                    });
+                }
             }
+            transforms.push(transform_matrix);
             i += 1;
         }
+
         ctx.queue.write_buffer(
             &self.mesh_uniform_buffer,
             0,
             bytemuck::cast_slice(&model_uniforms),
         );
-
-        // for (i, (mesh, material, transform)) in Q::<(
-        //     &AssetHandle<MeshAsset>,
-        //     &AssetHandle<MaterialAsset>,
-        //     &Transform,
-        // )>::new(entity_store, relationship_store)
-        // .iter()
-        // .enumerate()
-        // {
-        //     let material_handle = *material;
-        //     if !ctx.material_cache.has(material_handle) {
-        //         ctx.material_cache.load(
-        //             material_handle,
-        //             asset_store,
-        //             &mut ctx.texture_cache,
-        //             &self.material_bind_group_layout,
-        //             &ctx.device,
-        //             &ctx.queue,
-        //         )?;
-        //     }
-
-        //     let mesh_handle = *mesh;
-        //     if !ctx.model_cache.has(mesh_handle) {
-        //         ctx.model_cache.load(
-        //             mesh_handle,
-        //             asset_store,
-        //             &mut ctx.vertex_buffers,
-        //             &mut ctx.index_buffers,
-        //             &ctx.device,
-        //         )?;
-        //     }
-
-        //     let model = ctx
-        //         .model_cache
-        //         .get(mesh_handle)
-        //         .expect("Model not found in cache");
-        //     for mesh in &model.meshes {
-        //         ctx.draw_commands.push(DrawCommand {
-        //             vertex_buffer: mesh.vertex_buffer,
-        //             index_buffer: mesh.index_buffer,
-        //             element_count: mesh.element_count,
-        //             vertex_count: mesh.vertex_count,
-        //             material_handle,
-        //         });
-
-        //         ctx.queue.write_buffer(
-        //             &self.mesh_uniform_buffer,
-        //             (i * std::mem::size_of::<MeshUniform>()) as u64,
-        //             bytemuck::cast_slice(&[MeshUniform {
-        //                 world_transform: transform.as_matrix4().into(),
-        //                 inverse_world_transform: transform
-        //                     .as_matrix4()
-        //                     .try_inverse()
-        //                     .unwrap()
-        //                     .into(),
-        //                 _padding: [0u64; 16],
-        //             }]),
-        //         );
-        //     }
-        // }
 
         self.extract_lights(entity_store, relationship_store);
 

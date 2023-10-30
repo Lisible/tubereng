@@ -135,6 +135,47 @@ where
     }
 }
 
+impl<T> From<Matrix4<T>> for Quaternion<T>
+where
+    T: Debug + Float,
+{
+    #[allow(clippy::many_single_char_names)]
+    fn from(m: Matrix4<T>) -> Self {
+        let tr = m[0][0] + m[1][1] + m[2][2];
+        let (w, x, y, z) = if tr > T::zero() {
+            let s = (tr + T::one()).sqrt() * T::two();
+            let w = T::one_quarter() * s;
+            let x = (m[2][1] - m[1][2]) / s;
+            let y = (m[0][2] - m[2][0]) / s;
+            let z = (m[1][0] - m[0][1]) / s;
+            (w, x, y, z)
+        } else if (m[0][0] > m[1][1]) && (m[0][0] > m[2][2]) {
+            let s = (T::one() + m[0][0] - m[1][1] - m[2][2]).sqrt() * T::two();
+            let w = (m[2][1] - m[1][2]) / s;
+            let x = T::one_quarter() * s;
+            let y = (m[0][1] + m[1][0]) / s;
+            let z = (m[0][2] + m[2][0]) / s;
+            (w, x, y, z)
+        } else if m[1][1] > m[2][2] {
+            let s = (T::one() + m[1][1] - m[0][0] - m[2][2]).sqrt() * T::two();
+            let w = (m[0][2] - m[2][0]) / s;
+            let x = (m[0][1] + m[1][0]) / s;
+            let y = T::one_quarter() * s;
+            let z = (m[1][2] + m[2][1]) / s;
+            (w, x, y, z)
+        } else {
+            let s = (T::one() + m[2][2] - m[0][0] - m[1][1]).sqrt() * T::two();
+            let w = (m[1][0] - m[0][1]) / s;
+            let x = (m[0][2] + m[2][0]) / s;
+            let y = (m[1][2] + m[2][1]) / s;
+            let z = T::one_quarter() * s;
+            (w, x, y, z)
+        };
+
+        Quaternion::new(w, Vector3::<T>::new(x, y, z))
+    }
+}
+
 impl<T> Mul for Quaternion<T>
 where
     T: Debug + Float,

@@ -6,5 +6,9 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+tubereng-assets =  { path = "../tubereng-assets" }
+tubereng-core = { path = "../tubereng-core" }
+tubereng-math = { path = "../tubereng-math" }
+tubereng-graphics = { path = "../tubereng-graphics" }
 serde = { version  = "1.0", features = ["derive"] }
 serde_json = "1.0"

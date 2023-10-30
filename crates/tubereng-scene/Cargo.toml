@@ -1,14 +1,13 @@
 [package]
-name = "tubereng-engine"
+name = "tubereng-scene"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-tubereng-assets = { path = "../tubereng-assets" }
 tubereng-ecs = { path = "../tubereng-ecs" }
+tubereng-assets = { path = "../tubereng-assets" }
+tubereng-gltf = { path = "../tubereng-gltf" }
 tubereng-graphics = { path = "../tubereng-graphics" }
-tubereng-input = { path = "../tubereng-input" }
 tubereng-core = { path = "../tubereng-core" }
-log = "0.4"
