@@ -23,7 +23,7 @@ use tubereng::{
     },
     input::{keyboard::Key, InputState},
     math::{quaternion::Quaternion, vector::Vector3f},
-    scene::insert_gltf_to_scene,
+    scene::{entity_bundle_for_gltf, load_assets_for_gltf},
     winit::WinitTuberRunner,
 };
 
@@ -72,7 +72,10 @@ fn setup(command_buffer: &CommandBuffer, asset_store: ResMut<AssetStore>) {
         .unwrap();
 
     let gltf = asset_store.load::<Gltf>("model.glb").unwrap();
-    let _scene_root = insert_gltf_to_scene(command_buffer, &mut asset_store, gltf);
+    let (mesh_handles, material_handles) = load_assets_for_gltf(&mut asset_store, gltf);
+    let entity_bundle =
+        entity_bundle_for_gltf(&asset_store, gltf, &mesh_handles, &material_handles);
+    command_buffer.insert_bundle(entity_bundle);
 
     let mut entity_bundle = EntityBundle::new();
     entity_bundle.add_entity((
