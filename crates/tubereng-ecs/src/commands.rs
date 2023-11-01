@@ -1,14 +1,13 @@
 use std::{
     any::Any,
     cell::RefCell,
-    marker::PhantomData,
     rc::Rc,
     sync::atomic::{AtomicUsize, Ordering},
 };
 
 use crate::{
-    entity::EntityId,
-    relationship::Relationship,
+    entity::{EntityBundle, EntityId},
+    relationship::{Relationship, RelationshipId},
     system::{Into, System, SystemSet},
     Ecs, EntityDefinition,
 };
@@ -31,6 +30,26 @@ impl CommandBuffer {
         self.commands.borrow_mut().clear();
     }
 
+    pub fn insert_bundle(&self, entity_bundle: EntityBundle) {
+        let mut entity_ids = vec![];
+        for entity in entity_bundle.entities {
+            entity_ids.push(self.insert(entity));
+        }
+
+        for (source, relationship_map) in entity_bundle.relationships.iter().enumerate() {
+            let relationship_type_ids = relationship_map.keys().collect::<Vec<_>>();
+            for &relationship_type_id in relationship_type_ids {
+                for &target in &relationship_map[&relationship_type_id] {
+                    self.insert_relationship_with_relationship_id(
+                        relationship_type_id,
+                        entity_ids[source],
+                        entity_ids[target],
+                    );
+                }
+            }
+        }
+    }
+
     pub fn insert<ED>(&self, entity: ED) -> EntityId
     where
         ED: 'static + EntityDefinition,
@@ -51,9 +70,22 @@ impl CommandBuffer {
     where
         R: Relationship,
     {
+        self.insert_relationship_with_relationship_id(R::relationship_id(), source, target);
+    }
+
+    fn insert_relationship_with_relationship_id(
+        &self,
+        relationship_id: RelationshipId,
+        source: EntityId,
+        target: EntityId,
+    ) {
         self.commands
             .borrow_mut()
-            .push(Box::new(InsertRelationship::<R>::new(source, target)));
+            .push(Box::new(InsertRelationship::new(
+                relationship_id,
+                source,
+                target,
+            )));
     }
 
     pub fn insert_resource<R>(&self, resource: R)
@@ -150,32 +182,27 @@ where
     }
 }
 
-pub struct InsertRelationship<R> {
+pub struct InsertRelationship {
+    relationship_id: RelationshipId,
     source: EntityId,
     target: EntityId,
-    _marker: PhantomData<R>,
 }
 
-impl<R> InsertRelationship<R> {
+impl InsertRelationship {
     #[must_use]
-    pub fn new(source: EntityId, target: EntityId) -> Self
-    where
-        R: Relationship,
-    {
+    pub fn new(relationship_id: RelationshipId, source: EntityId, target: EntityId) -> Self
+where {
         Self {
+            relationship_id,
             source,
             target,
-            _marker: PhantomData,
         }
     }
 }
 
-impl<R> Command for InsertRelationship<R>
-where
-    R: Relationship,
-{
+impl Command for InsertRelationship {
     fn apply(&mut self, ecs: &mut Ecs) {
-        ecs.insert_relationship::<R>(self.source, self.target);
+        ecs.insert_relationship(self.relationship_id, self.source, self.target);
     }
 }
 

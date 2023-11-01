@@ -4,7 +4,7 @@
 use entity::{EntityId, EntityStore};
 use event::EventQueue;
 use log::{info, trace};
-use relationship::{Relationship, RelationshipStore};
+use relationship::{RelationshipId, RelationshipStore};
 use resource::Resources;
 use std::{
     any::Any,
@@ -111,11 +111,14 @@ impl Ecs {
         self.entity_store.write_component(entity_id, component);
     }
 
-    pub fn insert_relationship<R>(&mut self, source: EntityId, target: EntityId)
-    where
-        R: Relationship,
-    {
-        self.relationship_store.insert::<R>(source, target);
+    pub fn insert_relationship(
+        &mut self,
+        relationship_type_id: RelationshipId,
+        source: EntityId,
+        target: EntityId,
+    ) {
+        self.relationship_store
+            .insert(relationship_type_id, source, target);
     }
 
     pub fn insert_resource<R>(&mut self, resource: R)
@@ -171,17 +174,36 @@ impl Default for Ecs {
 }
 
 pub trait EntityDefinition: Debug {
-    fn write_into_entity_store(self, entity_store: &mut EntityStore, entity_id: EntityId);
+    fn write_into_entity_store(
+        self: Box<Self>,
+        entity_store: &mut EntityStore,
+        entity_id: EntityId,
+    );
+}
+
+impl EntityDefinition for Box<dyn EntityDefinition> {
+    fn write_into_entity_store(
+        self: Box<Self>,
+        entity_store: &mut EntityStore,
+        entity_id: EntityId,
+    ) {
+        (*self).write_into_entity_store(entity_store, entity_id);
+    }
 }
 
 impl EntityDefinition for () {
-    fn write_into_entity_store(self, _entity_store: &mut EntityStore, _entity_id: EntityId) {}
+    fn write_into_entity_store(
+        self: Box<Self>,
+        _entity_store: &mut EntityStore,
+        _entity_id: EntityId,
+    ) {
+    }
 }
 
 macro_rules! impl_entity_definition_for_tuples {
     ($head:ident: $head_i:tt, $($tail:ident: $tail_i:tt,)*) => {
         impl<$head: 'static + Debug, $($tail: 'static + Debug,)*> EntityDefinition for ($head, $($tail,)*) {
-            fn write_into_entity_store(self, entity_store: &mut EntityStore, entity_id: EntityId) {
+            fn write_into_entity_store(self: Box<Self>, entity_store: &mut EntityStore, entity_id: EntityId) {
                 entity_store.write_component(entity_id, self.$head_i);
                 $(entity_store.write_component(entity_id, self.$tail_i);)*
             }
@@ -198,6 +220,7 @@ impl_entity_definition_for_tuples!(F: 5, E: 4, D: 3, C: 2, B: 1, A: 0,);
 #[cfg(test)]
 mod tests {
 
+    use crate::relationship::Relationship;
     use crate::{
         event::{EventReader, EventWriter},
         query::Q,
@@ -235,8 +258,8 @@ mod tests {
         ecs.insert((Hat,));
         let hat = ecs.insert((Hat,));
         let hat2 = ecs.insert((Hat,));
-        ecs.insert_relationship::<ChildOf>(hat, player);
-        ecs.insert_relationship::<ChildOf>(hat2, player);
+        ecs.insert_relationship(ChildOf::relationship_id(), hat, player);
+        ecs.insert_relationship(ChildOf::relationship_id(), hat2, player);
 
         let q = Q::<(&Hat,)>::new(&ecs.entity_store, &ecs.relationship_store)
             .with_relationship::<ChildOf>(player);

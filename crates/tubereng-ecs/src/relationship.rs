@@ -26,13 +26,10 @@ impl RelationshipStore {
         }
     }
 
-    pub fn insert<R>(&mut self, source: EntityId, target: EntityId)
-    where
-        R: Relationship,
-    {
+    pub fn insert(&mut self, relationship_id: RelationshipId, source: EntityId, target: EntityId) {
         let relationship_data = self
             .relationships
-            .entry(R::relationship_id())
+            .entry(relationship_id)
             .or_insert_with(RelationshipData::new);
 
         relationship_data.insert_source(target, source);
@@ -118,7 +115,7 @@ impl Default for RelationshipData {
 }
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq)]
-pub struct RelationshipId(TypeId);
+pub struct RelationshipId(pub(crate) TypeId);
 
 pub trait Relationship: 'static {
     #[must_use]

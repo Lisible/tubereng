@@ -1,3 +1,4 @@
+use crate::relationship::Relationship;
 use std::{
     any::{Any, TypeId},
     cell::{Ref, RefCell, RefMut},
@@ -7,11 +8,51 @@ use std::{
 
 use log::trace;
 
-use crate::EntityDefinition;
+use crate::{relationship::RelationshipId, EntityDefinition};
 
 pub type EntityId = usize;
 
 type ComponentStore = Vec<Option<Rc<RefCell<dyn Any>>>>;
+
+pub struct EntityBundle {
+    pub(crate) entities: Vec<Box<dyn EntityDefinition>>,
+    pub(crate) relationships: Vec<HashMap<RelationshipId, Vec<usize>>>,
+}
+
+impl EntityBundle {
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            entities: vec![],
+            relationships: vec![],
+        }
+    }
+
+    pub fn add_entity<ED>(&mut self, entity_definition: ED) -> usize
+    where
+        ED: 'static + EntityDefinition,
+    {
+        self.entities.push(Box::new(entity_definition));
+        self.relationships.push(HashMap::new());
+        self.entities.len() - 1
+    }
+
+    pub fn add_relationship<R>(&mut self, source: usize, target: usize)
+    where
+        R: 'static,
+    {
+        self.relationships[source]
+            .entry(R::relationship_id())
+            .or_insert_with(Vec::new)
+            .push(target);
+    }
+}
+
+impl Default for EntityBundle {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 pub struct EntityStore {
     components: HashMap<TypeId, ComponentStore>,
@@ -50,7 +91,7 @@ impl EntityStore {
     {
         trace!("Inserting entity {:?}", &entity);
         let entity_id = self.allocate_entity();
-        entity.write_into_entity_store(self, entity_id);
+        Box::new(entity).write_into_entity_store(self, entity_id);
         entity_id
     }
 

@@ -6,6 +6,7 @@ use tubereng::{
     core::Transform,
     ecs::{
         commands::CommandBuffer,
+        entity::EntityBundle,
         event::EventWriter,
         query::Q,
         relationship::ChildOf,
@@ -73,7 +74,8 @@ fn setup(command_buffer: &CommandBuffer, asset_store: ResMut<AssetStore>) {
     let gltf = asset_store.load::<Gltf>("model.glb").unwrap();
     let _scene_root = insert_gltf_to_scene(command_buffer, &mut asset_store, gltf);
 
-    command_buffer.insert((
+    let mut entity_bundle = EntityBundle::new();
+    entity_bundle.add_entity((
         grid_mesh,
         grass_material,
         Transform {
@@ -81,7 +83,10 @@ fn setup(command_buffer: &CommandBuffer, asset_store: ResMut<AssetStore>) {
             ..Default::default()
         },
     ));
-    let mut cone = command_buffer.insert((
+    command_buffer.insert_bundle(entity_bundle);
+
+    let mut entity_bundle = EntityBundle::new();
+    let mut cone = entity_bundle.add_entity((
         cone_model,
         material,
         Transform {
@@ -91,7 +96,7 @@ fn setup(command_buffer: &CommandBuffer, asset_store: ResMut<AssetStore>) {
     ));
 
     for _ in 0..50 {
-        let child_cone = command_buffer.insert((
+        let child_cone = entity_bundle.add_entity((
             cone_model,
             material,
             Transform {
@@ -99,9 +104,11 @@ fn setup(command_buffer: &CommandBuffer, asset_store: ResMut<AssetStore>) {
                 ..Default::default()
             },
         ));
-        command_buffer.insert_relationship::<ChildOf>(child_cone, cone);
+        entity_bundle.add_relationship::<ChildOf>(child_cone, cone);
         cone = child_cone;
     }
+    command_buffer.insert_bundle(entity_bundle);
+
     command_buffer.insert((
         cube_model,
         material2,
