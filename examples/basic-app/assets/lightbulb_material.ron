@@ -1,3 +1,5 @@
 MaterialAsset(
-    texture: "lightbulb.png"
+    texture: File(
+        "lightbulb.png"
+    )
 )

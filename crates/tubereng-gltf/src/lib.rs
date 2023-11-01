@@ -81,6 +81,23 @@ impl From<parsing::Glb> for Gltf {
         let mut meshes = vec![];
         for mesh in &glb.gltf.meshes {
             for primitive in &mesh.primitives {
+                let material_index = primitive.material.unwrap();
+                let material = &glb.gltf.materials[material_index];
+                let pbr_material = material.pbr_metallic_roughness.as_ref().unwrap();
+                let base_color_texture_index =
+                    pbr_material.base_color_texture.as_ref().unwrap().index;
+                let base_color_texture = &glb.gltf.textures[base_color_texture_index];
+                let base_color_texture_image_index = base_color_texture.source.unwrap();
+                let base_color_texture_image = &glb.gltf.images[base_color_texture_image_index];
+                let base_color_texture_image_buffer_view_index =
+                    base_color_texture_image.buffer_view.unwrap();
+                let base_color_texture_image_buffer_view =
+                    &glb.gltf.buffer_views[base_color_texture_image_buffer_view_index];
+                let base_color_texture_image_data = &glb.binary_data
+                    [base_color_texture_image_buffer_view.byte_offset
+                        ..base_color_texture_image_buffer_view.byte_offset
+                            + base_color_texture_image_buffer_view.byte_length];
+
                 let position_attribute_byte_range = buffer_byte_range_for_attribute(
                     primitive,
                     &glb.gltf.accessors,
@@ -180,7 +197,11 @@ impl From<parsing::Glb> for Gltf {
                         texture_coordinates: vertex_texture_coordinates[vertex_index],
                     })
                     .collect();
-                meshes.push(Mesh { vertices, indices });
+                meshes.push(Mesh {
+                    vertices,
+                    indices,
+                    texture: base_color_texture_image_data.into(),
+                });
             }
         }
 
@@ -301,6 +322,7 @@ impl From<parsing::Node> for Node {
 pub struct Mesh {
     vertices: Vec<Vertex>,
     indices: Vec<Index>,
+    texture: Vec<u8>,
 }
 
 impl Mesh {
@@ -312,5 +334,10 @@ impl Mesh {
     #[must_use]
     pub fn indices(&self) -> &[Index] {
         &self.indices
+    }
+
+    #[must_use]
+    pub fn texture(&self) -> &[u8] {
+        &self.texture
     }
 }

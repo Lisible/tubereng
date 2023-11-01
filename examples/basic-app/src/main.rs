@@ -71,7 +71,7 @@ fn setup(command_buffer: &CommandBuffer, asset_store: ResMut<AssetStore>) {
         .unwrap();
 
     let gltf = asset_store.load::<Gltf>("model.glb").unwrap();
-    let _scene_root = insert_gltf_to_scene(command_buffer, &mut asset_store, gltf, grass_material);
+    let _scene_root = insert_gltf_to_scene(command_buffer, &mut asset_store, gltf);
 
     command_buffer.insert((
         grid_mesh,

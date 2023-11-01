@@ -1,11 +1,20 @@
-use crate::{texture::TextureCache, GraphicsError, Result};
+use crate::{
+    texture::{TextureAsset, TextureCache},
+    GraphicsError, Result,
+};
 use tubereng_assets::{AssetHandle, AssetStore, RonAsset};
 
 pub type MaterialId = usize;
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
 pub struct MaterialAsset {
-    texture: String,
+    pub texture: TextureSource,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub enum TextureSource {
+    File(String),
+    Data(Vec<u8>),
 }
 
 impl RonAsset for MaterialAsset {}
@@ -62,9 +71,16 @@ impl MaterialCache {
                 .ok_or(GraphicsError::MaterialAssetNotFound)?;
             material.texture.clone()
         };
-        let texture_asset_handle = asset_store
-            .load(&texture)
-            .map_err(GraphicsError::AssetError)?;
+        let texture_asset_handle = match texture {
+            TextureSource::File(texture_file_path) => asset_store
+                .load(&texture_file_path)
+                .map_err(GraphicsError::AssetError)?,
+            TextureSource::Data(texture_data) => asset_store.store(TextureAsset {
+                image: image::load_from_memory(&texture_data).map_err(|_| {
+                    GraphicsError::AssetError(tubereng_assets::AssetError::ImageDecodingFailed)
+                })?,
+            }),
+        };
         let texture_asset = asset_store
             .get(texture_asset_handle)
             .ok_or(GraphicsError::TextureAssetNotFound)?;
