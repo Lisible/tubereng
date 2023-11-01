@@ -75,13 +75,13 @@ where
         }
     }
 
-    /// Loads an asset using an asset path
+    /// Loads an asset using an asset path and returns the asset without storing it
     ///
     /// # Errors
     ///
     /// This function will return an error if the canonicalization of the path fails,
     /// or if the asset cannot be loaded.
-    pub fn load<A>(&mut self, asset_path: &str) -> Result<AssetHandle<A>>
+    pub fn load_without_storing<A>(&self, asset_path: &str) -> Result<A>
     where
         A: 'static + Asset,
     {
@@ -102,8 +102,20 @@ where
                 .to_str()
                 .ok_or(AssetError::AssetPathIsInvalidUTF8)?,
         )?;
-        let asset = A::Loader::load(&bytes)?;
-        Ok(self.store(asset))
+        A::Loader::load(&bytes)
+    }
+
+    /// Loads an asset using an asset path
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if the canonicalization of the path fails,
+    /// or if the asset cannot be loaded.
+    pub fn load<A>(&mut self, asset_path: &str) -> Result<AssetHandle<A>>
+    where
+        A: 'static + Asset,
+    {
+        Ok(self.store(self.load_without_storing(asset_path)?))
     }
 
     pub fn store<A>(&mut self, asset: A) -> AssetHandle<A>

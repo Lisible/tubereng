@@ -23,7 +23,7 @@ use tubereng::{
     },
     input::{keyboard::Key, InputState},
     math::{quaternion::Quaternion, vector::Vector3f},
-    scene::{entity_bundle_for_gltf, load_assets_for_gltf},
+    scene::Scene,
     winit::WinitTuberRunner,
 };
 
@@ -71,11 +71,11 @@ fn setup(command_buffer: &CommandBuffer, asset_store: ResMut<AssetStore>) {
         .load::<MaterialAsset>("grass_material.ron")
         .unwrap();
 
-    let gltf = asset_store.load::<Gltf>("model.glb").unwrap();
-    let (mesh_handles, material_handles) = load_assets_for_gltf(&mut asset_store, gltf);
-    let entity_bundle =
-        entity_bundle_for_gltf(&asset_store, gltf, &mesh_handles, &material_handles);
-    command_buffer.insert_bundle(entity_bundle);
+    let gltf = asset_store
+        .load_without_storing::<Gltf>("model.glb")
+        .unwrap();
+    let scene = Scene::from_gltf(gltf, &mut asset_store);
+    command_buffer.insert_bundle(scene.entity_bundle());
 
     let mut entity_bundle = EntityBundle::new();
     entity_bundle.add_entity((
