@@ -30,24 +30,26 @@ impl CommandBuffer {
         self.commands.borrow_mut().clear();
     }
 
-    pub fn insert_bundle(&self, entity_bundle: EntityBundle) {
+    pub fn insert_bundle(&self, entity_bundle: EntityBundle) -> EntityId {
         let mut entity_ids = vec![];
         for entity in entity_bundle.entities {
             entity_ids.push(self.insert(entity));
         }
 
         for (source, relationship_map) in entity_bundle.relationships.iter().enumerate() {
-            let relationship_type_ids = relationship_map.keys().collect::<Vec<_>>();
-            for &relationship_type_id in relationship_type_ids {
-                for &target in &relationship_map[&relationship_type_id] {
+            let relationship_ids = relationship_map.keys().collect::<Vec<_>>();
+            for &relationship_id in relationship_ids {
+                for &target in &relationship_map[&relationship_id] {
                     self.insert_relationship_with_relationship_id(
-                        relationship_type_id,
+                        relationship_id,
                         entity_ids[source],
                         entity_ids[target],
                     );
                 }
             }
         }
+
+        entity_ids[entity_bundle.root]
     }
 
     pub fn insert<ED>(&self, entity: ED) -> EntityId

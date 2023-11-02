@@ -3,7 +3,7 @@
 use std::{cell::RefMut, marker::PhantomData, any::{Any, TypeId}};
 use tubereng_input::{Input, InputState};
 
-use log::{debug, info};
+use log::{debug, info, trace};
 use tubereng_assets::{AssetStore, FS};
 use tubereng_ecs::{
     system::{Into, System, SystemFn},
@@ -47,6 +47,7 @@ where
     }
 
     pub fn update(&mut self, delta_time: f32) { 
+        trace!("Begin updating...");
         self.update_delta_time_resource(delta_time);
         self.ecs.run_systems();
         self.ecs.execute_pending_commands();
@@ -55,6 +56,7 @@ where
         for _ in Self::event_iter::<ExitRequest>(&pending_events) {
             self.exit();
         }
+        trace!("Updating ended");
     }
 
     fn update_delta_time_resource(&mut self, delta_time: f32) {
@@ -95,6 +97,7 @@ where
             .renderer
             .as_mut()
             .expect("The renderer is uninitialized");
+        trace!("Preparing frame render...");
         renderer
             .prepare_render(
                 self.ecs.entity_store(),
@@ -105,7 +108,9 @@ where
                     .expect("AssetStore is not present in the resources"),
             )
             .unwrap();
+        trace!("Begin frame render...");
         renderer.render().unwrap();
+        trace!("Frame render ended");
     }
 
     pub fn resize(&mut self, new_size: WindowSize) {

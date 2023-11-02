@@ -78,6 +78,23 @@ impl RelationshipStore {
             .copied()
             .collect::<Vec<_>>()
     }
+    #[must_use]
+    pub fn targets_of<R>(&self, source: EntityId) -> Vec<EntityId>
+    where
+        R: Relationship,
+    {
+        let Some(relationship) = self.relationships.get(&R::relationship_id()) else {
+            return vec![];
+        };
+
+        let mut res = vec![];
+        for target in relationship.sources_by_target.keys() {
+            if relationship.sources_by_target[target].contains(&source) {
+                res.push(*target);
+            }
+        }
+        res
+    }
 }
 
 pub struct RelationshipData {
@@ -125,3 +142,34 @@ pub trait Relationship: 'static {
 }
 
 impl<T> Relationship for T where T: 'static {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn add_relationship() {
+        let mut relationship_store = RelationshipStore::new();
+        relationship_store.insert(ChildOf::relationship_id(), 1, 0);
+        assert!(relationship_store.has(ChildOf::relationship_id(), 1, 0));
+        let children_of_0 = relationship_store.sources_of::<ChildOf>(0);
+        assert_eq!(children_of_0.len(), 1);
+        assert_eq!(children_of_0[0], 1);
+        let all_children_of_any = relationship_store.all_sources_of::<ChildOf>();
+        assert_eq!(all_children_of_any.len(), 1);
+        assert_eq!(*all_children_of_any.iter().next().unwrap(), 1);
+    }
+
+    #[test]
+    fn add_relationships() {
+        let mut relationship_store = RelationshipStore::new();
+        relationship_store.insert(ChildOf::relationship_id(), 1, 0);
+        relationship_store.insert(ChildOf::relationship_id(), 2, 1);
+        assert!(relationship_store.has(ChildOf::relationship_id(), 1, 0));
+        let children_of_0 = relationship_store.sources_of::<ChildOf>(0);
+        assert_eq!(children_of_0.len(), 1);
+        assert_eq!(children_of_0[0], 1);
+        let all_children_of_any = relationship_store.all_sources_of::<ChildOf>();
+        assert_eq!(all_children_of_any.len(), 2);
+    }
+}

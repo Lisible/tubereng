@@ -102,6 +102,7 @@ impl Scene {
         }
 
         let root_entity = bundle.add_entity((Transform::default(),));
+        bundle.set_root(root_entity);
         for &child in self.gltf.scenes()[self.gltf.default_scene()].nodes() {
             bundle.add_relationship::<ChildOf>(entity_ids_for_nodes[child], root_entity);
         }

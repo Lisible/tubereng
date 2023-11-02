@@ -7,8 +7,10 @@ use crate::{
     texture::{DepthBufferTextureHandle, TextureCache},
     DrawCommand, Result,
 };
-use std::collections::HashMap;
+use core::fmt;
+use std::collections::{HashMap, HashSet};
 
+use log::trace;
 use tubereng_assets::{AssetHandle, AssetStore};
 use tubereng_core::Transform;
 use tubereng_ecs::{
@@ -299,6 +301,30 @@ impl DefaultRenderPipeline {
             _padding2: 0,
         };
     }
+
+    fn load_material_into_cache_if_required(
+        &mut self,
+        material: Option<std::cell::Ref<AssetHandle<MaterialAsset>>>,
+        ctx: &mut RenderingContext,
+        asset_store: &mut AssetStore,
+    ) -> Result<Option<AssetHandle<MaterialAsset>>> {
+        Ok(if let Some(material_handle) = material {
+            let material_handle = *material_handle;
+            if !ctx.material_cache.has(material_handle) {
+                ctx.material_cache.load(
+                    material_handle,
+                    asset_store,
+                    &mut ctx.texture_cache,
+                    &self.material_bind_group_layout,
+                    &ctx.device,
+                    &ctx.queue,
+                )?;
+            }
+            Some(material_handle)
+        } else {
+            None
+        })
+    }
 }
 
 #[derive(Default)]
@@ -339,7 +365,7 @@ impl RenderPipeline for DefaultRenderPipeline {
 
         let mesh_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("mesh_uniform_buffer"),
-            size: (std::mem::size_of::<MeshUniform>() * 100) as u64,
+            size: (std::mem::size_of::<MeshUniform>() * 10000) as u64,
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::UNIFORM,
             mapped_at_creation: false,
         });
@@ -459,13 +485,14 @@ impl RenderPipeline for DefaultRenderPipeline {
         let mut entities_to_process = entity_store
             .entity_ids()
             .difference(&relationship_store.all_sources_of::<ChildOf>())
-            .map(|i| (None, *i))
+            .map(|&entity_id| (None, entity_id))
             .collect::<Vec<_>>();
 
         let mut model_uniforms = vec![];
         let mut transforms: Vec<Matrix4f> = vec![];
 
-        let mut i = 0;
+        trace!("DFS");
+        let mut parent_transform_index = 0;
         while let Some((parent, entity)) = entities_to_process.pop() {
             let Some((mesh, material, transform)) = Q::<(
                 Option<&AssetHandle<MeshAsset>>,
@@ -476,46 +503,16 @@ impl RenderPipeline for DefaultRenderPipeline {
                 continue;
             };
 
-            entities_to_process.extend_from_slice(
-                &relationship_store
-                    .sources_of::<ChildOf>(entity)
-                    .iter()
-                    .map(|j| (Some(i), *j))
-                    .collect::<Vec<_>>(),
-            );
+            let children = relationship_store.sources_of::<ChildOf>(entity);
+            let children = children
+                .iter()
+                .map(|&entity_id| (Some(parent_transform_index), entity_id))
+                .collect::<Vec<_>>();
+            entities_to_process.extend_from_slice(&children);
 
-            let material_handle = if let Some(material_handle) = material {
-                let material_handle = *material_handle;
-                if !ctx.material_cache.has(material_handle) {
-                    ctx.material_cache.load(
-                        material_handle,
-                        asset_store,
-                        &mut ctx.texture_cache,
-                        &self.material_bind_group_layout,
-                        &ctx.device,
-                        &ctx.queue,
-                    )?;
-                }
-                Some(material_handle)
-            } else {
-                None
-            };
-
-            let mesh_handle = if let Some(mesh_handle) = mesh {
-                let mesh_handle = *mesh_handle;
-                if !ctx.model_cache.has(mesh_handle) {
-                    ctx.model_cache.load(
-                        mesh_handle,
-                        asset_store,
-                        &mut ctx.vertex_buffers,
-                        &mut ctx.index_buffers,
-                        &ctx.device,
-                    )?;
-                }
-                Some(mesh_handle)
-            } else {
-                None
-            };
+            let material_handle =
+                self.load_material_into_cache_if_required(material, ctx, asset_store)?;
+            let mesh_handle = load_mesh_into_cache_if_required(mesh, ctx, asset_store)?;
 
             let mut transform_matrix = transform.as_matrix4();
             if let Some(parent) = parent {
@@ -543,8 +540,9 @@ impl RenderPipeline for DefaultRenderPipeline {
                 }
             }
             transforms.push(transform_matrix);
-            i += 1;
+            parent_transform_index += 1;
         }
+        trace!("END DFS");
 
         ctx.queue.write_buffer(
             &self.mesh_uniform_buffer,
@@ -666,6 +664,28 @@ impl RenderPipeline for DefaultRenderPipeline {
 
         Ok(())
     }
+}
+
+fn load_mesh_into_cache_if_required(
+    mesh: Option<std::cell::Ref<AssetHandle<MeshAsset>>>,
+    ctx: &mut RenderingContext,
+    asset_store: &mut AssetStore,
+) -> Result<Option<AssetHandle<MeshAsset>>> {
+    Ok(if let Some(mesh_handle) = mesh {
+        let mesh_handle = *mesh_handle;
+        if !ctx.model_cache.has(mesh_handle) {
+            ctx.model_cache.load(
+                mesh_handle,
+                asset_store,
+                &mut ctx.vertex_buffers,
+                &mut ctx.index_buffers,
+                &ctx.device,
+            )?;
+        }
+        Some(mesh_handle)
+    } else {
+        None
+    })
 }
 
 fn load_shaders(device: &wgpu::Device, shader_modules: &mut HashMap<String, wgpu::ShaderModule>) {

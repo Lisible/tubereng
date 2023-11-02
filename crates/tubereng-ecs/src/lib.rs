@@ -80,6 +80,7 @@ impl Ecs {
     }
 
     pub fn run_systems(&mut self) {
+        trace!("Running systems...");
         self.event_queue.swap_and_clear();
         for system_set in &mut self.system_sets {
             for system in system_set.iter_mut() {
@@ -93,6 +94,7 @@ impl Ecs {
                 system.execute(&ctx);
             }
         }
+        trace!("Systems all ran.");
     }
 
     #[must_use]
@@ -157,6 +159,7 @@ impl Ecs {
                 command.apply(self);
             }
         }
+        self.pending_commands = CommandBuffer::new(self.entity_count());
     }
 
     #[must_use]

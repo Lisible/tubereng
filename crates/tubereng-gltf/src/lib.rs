@@ -85,7 +85,11 @@ impl From<parsing::Glb> for Gltf {
                 let material = &glb.gltf.materials[material_index];
                 let pbr_material = material.pbr_metallic_roughness.as_ref().unwrap();
                 let base_color_texture_index =
-                    pbr_material.base_color_texture.as_ref().unwrap().index;
+                    if let Some(base_color_texture) = pbr_material.base_color_texture.as_ref() {
+                        base_color_texture.index
+                    } else {
+                        continue;
+                    };
                 let base_color_texture = &glb.gltf.textures[base_color_texture_index];
                 let base_color_texture_image_index = base_color_texture.source.unwrap();
                 let base_color_texture_image = &glb.gltf.images[base_color_texture_image_index];

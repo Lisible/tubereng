@@ -17,6 +17,7 @@ type ComponentStore = Vec<Option<Rc<RefCell<dyn Any>>>>;
 pub struct EntityBundle {
     pub(crate) entities: Vec<Box<dyn EntityDefinition>>,
     pub(crate) relationships: Vec<HashMap<RelationshipId, Vec<usize>>>,
+    pub(crate) root: usize,
 }
 
 impl EntityBundle {
@@ -25,6 +26,7 @@ impl EntityBundle {
         Self {
             entities: vec![],
             relationships: vec![],
+            root: 0,
         }
     }
 
@@ -45,6 +47,10 @@ impl EntityBundle {
             .entry(R::relationship_id())
             .or_insert_with(Vec::new)
             .push(target);
+    }
+
+    pub fn set_root(&mut self, root: usize) {
+        self.root = root;
     }
 }
 
@@ -91,7 +97,11 @@ impl EntityStore {
     {
         trace!("Inserting entity {:?}", &entity);
         let entity_id = self.allocate_entity();
+
+        trace!("Writing entity {} in the entity store", entity_id);
         Box::new(entity).write_into_entity_store(self, entity_id);
+
+        trace!("Entity {} inserted", entity_id);
         entity_id
     }
 
