@@ -11,7 +11,14 @@ struct CameraUniform {
 struct LightStorage {
     ambient_light_factor: f32,
     point_light_count: u32,
-    point_lights: array<PointLight>,
+    point_lights: array<PointLight,10>,
+    directional_light_count: u32,
+    directional_lights: array<DirectionalLight,10>,
+}
+
+struct DirectionalLight {
+    direction: vec3<f32>,
+    color: vec3<f32>,
 }
 
 struct PointLight {
@@ -71,11 +78,31 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let view_direction = normalize(camera.position - in.fragment_position);
     let texture_sample = vec4<f32>(in.color.xyz, 1.0) * textureSample(t_diffuse, t_sampler, in.texture_coordinates);
     var result = light_storage.ambient_light_factor * texture_sample.xyz;
+    for(var i: u32 = 0u; i < 1u; i++) {
+        result += compute_directional_light(light_storage.directional_lights[i], normalized_normal.xyz, view_direction, texture_sample.xyz);
+    }
+
     for(var i: u32 = 0u; i < light_storage.point_light_count; i++) {
         result += compute_point_light(light_storage.point_lights[i], normalized_normal.xyz, in.fragment_position, view_direction, texture_sample.xyz);
     }
 
     return vec4<f32>(result, 1.0);
+}
+
+fn compute_directional_light(light: DirectionalLight, normal: vec3<f32>, view_direction: vec3<f32>, texture_sample: vec3<f32>) -> vec3<f32> {
+    let light_direction = normalize(-light.direction);
+
+    // diffuse
+    let diffuse = max(dot(normal, light_direction), 0.0);
+
+    // specular
+    let shininess = 32.0;
+    let reflect_direction = reflect(-light_direction, normal);
+    let specular = pow(max(dot(view_direction, reflect_direction), 0.0), shininess);
+
+    let diffuse_lighting = light.color * diffuse * texture_sample;
+    let specular_lighting = light.color * specular * texture_sample;
+    return diffuse_lighting + specular_lighting;
 }
 
 fn compute_point_light(light: PointLight, normal: vec3<f32>, fragment_position: vec3<f32>, view_direction: vec3<f32>, texture_sample: vec3<f32>) -> vec3<f32> {
@@ -95,5 +122,5 @@ fn compute_point_light(light: PointLight, normal: vec3<f32>, fragment_position: 
     
     let diffuse_lighting = light.color * diffuse * texture_sample * attenuation;
     let specular_lighting = light.color * specular * texture_sample * attenuation;
-    return diffuse_lighting;
+    return diffuse_lighting + specular_lighting;
 }

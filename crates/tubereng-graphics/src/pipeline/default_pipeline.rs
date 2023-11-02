@@ -290,6 +290,14 @@ impl DefaultRenderPipeline {
                 _padding3: 0,
             };
         }
+
+        self.light_storage.directional_light_count = 1;
+        self.light_storage.directional_lights[0] = DirectionalLight {
+            direction: [0.0, -0.3, -1.0],
+            _padding: 0,
+            color: [1.0, 1.0, 1.0],
+            _padding2: 0,
+        };
     }
 }
 
@@ -367,6 +375,10 @@ impl RenderPipeline for DefaultRenderPipeline {
             point_light_count: 0,
             point_lights: [PointLight::default(); 10],
             _padding: 0,
+            directional_light_count: 1,
+            _padding2: 0,
+            _padding3: 0,
+            directional_lights: [DirectionalLight::default(); 10],
         };
 
         let light_storage_buffer = device.create_buffer_init(&BufferInitDescriptor {
@@ -694,6 +706,30 @@ struct LightStorage {
     point_light_count: u32,
     _padding: u64,
     point_lights: [PointLight; 10],
+    directional_light_count: u32,
+    _padding2: u32,
+    _padding3: u64,
+    directional_lights: [DirectionalLight; 10],
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct DirectionalLight {
+    direction: [f32; 3],
+    _padding: u32,
+    color: [f32; 3],
+    _padding2: u32,
+}
+
+impl Default for DirectionalLight {
+    fn default() -> Self {
+        Self {
+            direction: [0.0, -0.3, 1.0],
+            _padding: 0,
+            color: [1.0, 1.0, 1.0],
+            _padding2: 0,
+        }
+    }
 }
 
 #[repr(C)]
