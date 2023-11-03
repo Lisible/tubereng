@@ -131,11 +131,6 @@ impl EntityStore {
         &self,
         index: usize,
     ) -> Option<MappedRwLockReadGuard<T>> {
-        trace!(
-            "Locking component {:?} for entity {}",
-            TypeId::of::<T>(),
-            index
-        );
         Some(RwLockReadGuard::map(
             self.components
                 .get(&TypeId::of::<T>())?
@@ -152,11 +147,6 @@ impl EntityStore {
         &self,
         index: usize,
     ) -> Option<MappedRwLockWriteGuard<T>> {
-        trace!(
-            "Locking component {:?} for entity {}",
-            TypeId::of::<T>(),
-            index
-        );
         Some(RwLockWriteGuard::map(
             self.components
                 .get(&TypeId::of::<T>())?

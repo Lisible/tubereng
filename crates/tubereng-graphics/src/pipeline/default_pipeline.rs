@@ -7,8 +7,9 @@ use crate::{
     texture::{DepthBufferTextureHandle, TextureCache},
     DrawCommand, Result,
 };
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Instant};
 
+use log::trace;
 use tubereng_assets::{AssetHandle, AssetStore};
 use tubereng_core::Transform;
 use tubereng_ecs::{
@@ -491,6 +492,10 @@ impl RenderPipeline for DefaultRenderPipeline {
         let mut model_uniforms = vec![];
         let mut transforms: Vec<Matrix4f> = vec![];
         let mut parent_transform_index = 0;
+
+        let now = Instant::now();
+        trace!("Entity count: {}", entity_store.entity_count());
+        trace!("Starting entity DFS");
         while let Some((parent, entity)) = entities_to_process.pop() {
             let Some((mesh, material, transform,)) = Q::<(
                 Option<&AssetHandle<MeshAsset>>,
@@ -540,6 +545,7 @@ impl RenderPipeline for DefaultRenderPipeline {
             transforms.push(transform_matrix);
             parent_transform_index += 1;
         }
+        trace!("Entity DFS ended, lasted {:?}", now.elapsed());
 
         ctx.queue.write_buffer(
             &self.mesh_uniform_buffer,

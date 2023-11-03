@@ -1,6 +1,6 @@
 #![warn(clippy::pedantic)]
 
-use std::{marker::PhantomData, any::{Any, TypeId}};
+use std::{marker::PhantomData, any::{Any, TypeId}, time::Instant};
 use tubereng_input::{Input, InputState};
 
 use log::{debug, info, trace};
@@ -48,6 +48,7 @@ where
 
     pub fn update(&mut self, delta_time: f32) { 
         trace!("Begin updating...");
+        let now = Instant::now();
         self.update_delta_time_resource(delta_time);
         self.ecs.run_systems();
         self.ecs.execute_pending_commands();
@@ -56,7 +57,7 @@ where
         for _ in Self::event_iter::<ExitRequest>(pending_events.as_slice()) {
             self.exit();
         }
-        trace!("Updating ended");
+        trace!("Updating ended, took {:?}", now.elapsed());
     }
 
     fn update_delta_time_resource(&mut self, delta_time: f32) {
@@ -98,6 +99,7 @@ where
             .as_mut()
             .expect("The renderer is uninitialized");
         trace!("Preparing frame render...");
+        let now = Instant::now();
         renderer
             .prepare_render(
                 self.ecs.entity_store(),
@@ -108,6 +110,7 @@ where
                     .expect("AssetStore is not present in the resources"),
             )
             .unwrap();
+        trace!("Frame preparation ended, took {:?}", now.elapsed());
         trace!("Begin frame render...");
         renderer.render().unwrap();
         trace!("Frame render ended");
