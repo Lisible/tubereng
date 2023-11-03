@@ -7,16 +7,15 @@ use crate::{
     texture::{DepthBufferTextureHandle, TextureCache},
     DrawCommand, Result,
 };
-use core::fmt;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
-use log::trace;
 use tubereng_assets::{AssetHandle, AssetStore};
 use tubereng_core::Transform;
 use tubereng_ecs::{
     entity::EntityStore,
     query::Q,
     relationship::{ChildOf, RelationshipStore},
+    resource::ResourceRef,
 };
 use tubereng_math::matrix::{Identity, Matrix4f};
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
@@ -304,15 +303,15 @@ impl DefaultRenderPipeline {
 
     fn load_material_into_cache_if_required(
         &mut self,
-        material: Option<std::cell::Ref<AssetHandle<MaterialAsset>>>,
+        material: &Option<ResourceRef<AssetHandle<MaterialAsset>>>,
         ctx: &mut RenderingContext,
         asset_store: &mut AssetStore,
     ) -> Result<Option<AssetHandle<MaterialAsset>>> {
         Ok(if let Some(material_handle) = material {
-            let material_handle = *material_handle;
-            if !ctx.material_cache.has(material_handle) {
+            let material_handle = material_handle;
+            if !ctx.material_cache.has(**material_handle) {
                 ctx.material_cache.load(
-                    material_handle,
+                    **material_handle,
                     asset_store,
                     &mut ctx.texture_cache,
                     &self.material_bind_group_layout,
@@ -320,7 +319,7 @@ impl DefaultRenderPipeline {
                     &ctx.queue,
                 )?;
             }
-            Some(material_handle)
+            Some(**material_handle)
         } else {
             None
         })
@@ -473,6 +472,7 @@ impl RenderPipeline for DefaultRenderPipeline {
             0,
             bytemuck::cast_slice(&[self.camera_uniform]),
         );
+        std::mem::drop(camera_transform);
 
         self.inverse_camera_uniform.view_projection_inverse =
             camera_view_projection_matrix.try_inverse().unwrap().into();
@@ -490,11 +490,9 @@ impl RenderPipeline for DefaultRenderPipeline {
 
         let mut model_uniforms = vec![];
         let mut transforms: Vec<Matrix4f> = vec![];
-
-        trace!("DFS");
         let mut parent_transform_index = 0;
         while let Some((parent, entity)) = entities_to_process.pop() {
-            let Some((mesh, material, transform)) = Q::<(
+            let Some((mesh, material, transform,)) = Q::<(
                 Option<&AssetHandle<MeshAsset>>,
                 Option<&AssetHandle<MaterialAsset>>,
                 &Transform,
@@ -511,8 +509,8 @@ impl RenderPipeline for DefaultRenderPipeline {
             entities_to_process.extend_from_slice(&children);
 
             let material_handle =
-                self.load_material_into_cache_if_required(material, ctx, asset_store)?;
-            let mesh_handle = load_mesh_into_cache_if_required(mesh, ctx, asset_store)?;
+                self.load_material_into_cache_if_required(&material, ctx, asset_store)?;
+            let mesh_handle = load_mesh_into_cache_if_required(&mesh, ctx, asset_store)?;
 
             let mut transform_matrix = transform.as_matrix4();
             if let Some(parent) = parent {
@@ -542,7 +540,6 @@ impl RenderPipeline for DefaultRenderPipeline {
             transforms.push(transform_matrix);
             parent_transform_index += 1;
         }
-        trace!("END DFS");
 
         ctx.queue.write_buffer(
             &self.mesh_uniform_buffer,
@@ -667,22 +664,22 @@ impl RenderPipeline for DefaultRenderPipeline {
 }
 
 fn load_mesh_into_cache_if_required(
-    mesh: Option<std::cell::Ref<AssetHandle<MeshAsset>>>,
+    mesh: &Option<ResourceRef<AssetHandle<MeshAsset>>>,
     ctx: &mut RenderingContext,
     asset_store: &mut AssetStore,
 ) -> Result<Option<AssetHandle<MeshAsset>>> {
     Ok(if let Some(mesh_handle) = mesh {
-        let mesh_handle = *mesh_handle;
-        if !ctx.model_cache.has(mesh_handle) {
+        let mesh_handle = mesh_handle;
+        if !ctx.model_cache.has(**mesh_handle) {
             ctx.model_cache.load(
-                mesh_handle,
+                **mesh_handle,
                 asset_store,
                 &mut ctx.vertex_buffers,
                 &mut ctx.index_buffers,
                 &ctx.device,
             )?;
         }
-        Some(mesh_handle)
+        Some(**mesh_handle)
     } else {
         None
     })

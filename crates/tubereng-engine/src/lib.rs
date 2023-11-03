@@ -1,13 +1,13 @@
 #![warn(clippy::pedantic)]
 
-use std::{cell::RefMut, marker::PhantomData, any::{Any, TypeId}};
+use std::{marker::PhantomData, any::{Any, TypeId}};
 use tubereng_input::{Input, InputState};
 
 use log::{debug, info, trace};
 use tubereng_assets::{AssetStore, FS};
 use tubereng_ecs::{
     system::{Into, System, SystemFn},
-    Ecs,
+    Ecs, resource::ResourceRefMut,
 };
 use tubereng_core::DeltaTime;
 use tubereng_graphics::{
@@ -53,7 +53,7 @@ where
         self.ecs.execute_pending_commands();
 
         let pending_events = self.ecs.event_queue_mut().drain(..).collect::<Vec<_>>();
-        for _ in Self::event_iter::<ExitRequest>(&pending_events) {
+        for _ in Self::event_iter::<ExitRequest>(pending_events.as_slice()) {
             self.exit();
         }
         trace!("Updating ended");
@@ -65,7 +65,7 @@ where
     }
 
     // TODO: Change this
-    fn event_iter<E>(pending_events: &[Box<dyn Any>]) -> impl Iterator<Item = &E> where E: 'static {
+    fn event_iter<E>(pending_events: &[Box<dyn Any + Send>]) -> impl Iterator<Item = &E> where E: 'static {
         pending_events
             .iter()
             .filter(|e| (***e).type_id() == TypeId::of::<E>())
@@ -75,7 +75,7 @@ where
                 unsafe { e.downcast_ref::<E>().unwrap_unchecked() })
     }
 
-    fn input_state(&mut self) -> RefMut<InputState> {
+    fn input_state(&mut self) -> ResourceRefMut<InputState> {
         self.ecs
             .resource_mut::<InputState>()
             .expect("Input state not foudn in resources")
@@ -166,8 +166,8 @@ where
     #[must_use]
     pub fn with_setup_system<S, M>(mut self, system: S) -> Self
     where
-        S: SystemFn<M>,
-        M: 'static,
+        S: SystemFn<M> + Send,
+        M: 'static + Send,
     {
         self.setup_system = Some(Box::new(Into::into(system)));
         self

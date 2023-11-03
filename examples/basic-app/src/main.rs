@@ -10,7 +10,7 @@ use tubereng::{
         event::EventWriter,
         query::Q,
         relationship::ChildOf,
-        system::{Res, ResMut},
+        system::{Res, ResMut, SystemSet},
     },
     engine::{Engine, EngineBuilder, ExitRequest},
     gltf::Gltf,
@@ -125,8 +125,11 @@ fn setup(command_buffer: &CommandBuffer, asset_store: ResMut<AssetStore>) {
         model: light_model,
         material: light_material,
     });
-    command_buffer.register_system(spawn_light_at_camera_position);
-    command_buffer.register_system(exit);
+
+    let mut system_set = SystemSet::new();
+    system_set.add_system(spawn_light_at_camera_position);
+    system_set.add_system(exit);
+    command_buffer.register_system_set(system_set);
 }
 
 #[allow(clippy::cast_precision_loss)]

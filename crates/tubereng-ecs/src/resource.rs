@@ -1,13 +1,19 @@
 use std::{
     any::{Any, TypeId},
-    cell::{Ref, RefCell, RefMut},
     collections::HashMap,
-    rc::Rc,
+    sync::Arc,
+};
+
+use parking_lot::{
+    MappedRwLockReadGuard, MappedRwLockWriteGuard, RwLock, RwLockReadGuard, RwLockWriteGuard,
 };
 
 pub struct Resources {
-    resources: HashMap<TypeId, Rc<RefCell<Box<dyn Any>>>>,
+    resources: HashMap<TypeId, Arc<RwLock<dyn Any + Send + Sync>>>,
 }
+
+pub type ResourceRef<'a, R> = MappedRwLockReadGuard<'a, R>;
+pub type ResourceRefMut<'a, R> = MappedRwLockWriteGuard<'a, R>;
 
 impl Resources {
     #[must_use]
@@ -19,33 +25,35 @@ impl Resources {
 
     pub fn insert<R>(&mut self, resource: R)
     where
-        R: 'static + Any,
+        R: 'static + Any + Send + Sync,
     {
         self.resources
-            .insert(TypeId::of::<R>(), Rc::new(RefCell::new(Box::new(resource))));
+            .insert(TypeId::of::<R>(), Arc::new(RwLock::new(resource)));
     }
 
     #[must_use]
-    pub fn resource<R>(&self) -> Option<Ref<R>>
+    pub fn resource<R>(&self) -> Option<ResourceRef<R>>
     where
-        R: 'static + Any,
+        R: 'static + Any + Send,
     {
-        Some(Ref::map(self.resources[&TypeId::of::<R>()].borrow(), |r| {
-            r.downcast_ref().expect("Couldn't downcast resource ref")
-        }))
+        Some(RwLockReadGuard::map(
+            self.resources.get(&TypeId::of::<R>())?.as_ref().read(),
+            // SAFETY: We know that the type of e is R as it has been retrieved from
+            // `self.resources[&TypeId::of::<R>()]`
+            |e| unsafe { e.downcast_ref::<R>().unwrap_unchecked() },
+        ))
     }
 
     #[must_use]
-    pub fn resource_mut<R>(&self) -> Option<RefMut<R>>
+    pub fn resource_mut<R>(&self) -> Option<ResourceRefMut<R>>
     where
-        R: 'static + Any,
+        R: Any + Send,
     {
-        Some(RefMut::map(
-            self.resources[&TypeId::of::<R>()].borrow_mut(),
-            |r| {
-                r.downcast_mut()
-                    .expect("Couldn't downcast resource mut ref")
-            },
+        Some(RwLockWriteGuard::map(
+            self.resources.get(&TypeId::of::<R>())?.as_ref().write(),
+            // SAFETY: We know that the type of e is R as it has been retrieved from
+            // `self.resources[&TypeId::of::<R>()]`
+            |e| unsafe { e.downcast_mut::<R>().unwrap_unchecked() },
         ))
     }
 }

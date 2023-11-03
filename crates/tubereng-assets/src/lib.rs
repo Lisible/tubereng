@@ -59,13 +59,16 @@ impl<T: 'static> AssetHandle<T> {
     }
 }
 
-pub struct AssetStore<FileSys = FS> {
-    assets: Vec<Box<dyn Any>>,
+pub struct AssetStore<FileSys = FS>
+where
+    FileSys: Send + Sync,
+{
+    assets: Vec<Box<dyn Any + Send + Sync>>,
     _marker: PhantomData<FileSys>,
 }
 impl<FS> AssetStore<FS>
 where
-    FS: FileSystem,
+    FS: FileSystem + Send + Sync,
 {
     #[must_use]
     pub fn new() -> Self {
@@ -113,14 +116,14 @@ where
     /// or if the asset cannot be loaded.
     pub fn load<A>(&mut self, asset_path: &str) -> Result<AssetHandle<A>>
     where
-        A: 'static + Asset,
+        A: 'static + Asset + Send + Sync,
     {
         Ok(self.store(self.load_without_storing(asset_path)?))
     }
 
     pub fn store<A>(&mut self, asset: A) -> AssetHandle<A>
     where
-        A: 'static + Asset,
+        A: 'static + Asset + Send + Sync,
     {
         let asset_id = self.assets.len();
         self.assets.push(Box::new(asset));
@@ -135,7 +138,7 @@ where
 
 impl<FS> Default for AssetStore<FS>
 where
-    FS: FileSystem,
+    FS: FileSystem + Send + Sync,
 {
     fn default() -> Self {
         Self::new()

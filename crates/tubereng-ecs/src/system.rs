@@ -1,8 +1,4 @@
-use std::{
-    cell::{Ref, RefMut},
-    marker::PhantomData,
-    ops::DerefMut,
-};
+use std::{marker::PhantomData, ops::DerefMut};
 
 use crate::{
     commands::CommandBuffer,
@@ -10,11 +6,11 @@ use crate::{
     event::{EventQueue, EventReader, EventWriter},
     query::{Query, Q},
     relationship::RelationshipStore,
-    resource::Resources,
+    resource::{ResourceRef, ResourceRefMut, Resources},
 };
 
 pub struct SystemSet {
-    systems: Vec<Box<dyn System>>,
+    systems: Vec<Box<dyn System + Send + Sync>>,
 }
 
 impl SystemSet {
@@ -25,13 +21,13 @@ impl SystemSet {
 
     pub fn add_system<S, ST, M>(&mut self, system: S)
     where
-        S: Into<M, SystemType = ST>,
-        ST: System + 'static,
+        S: Into<M, SystemType = ST> + Send + Sync,
+        ST: 'static + System + Send + Sync,
     {
         self.systems.push(Box::new(Into::into(system)));
     }
 
-    pub fn iter_mut(&mut self) -> std::slice::IterMut<Box<dyn System>> {
+    pub fn iter_mut(&mut self) -> std::slice::IterMut<Box<dyn System + Send + Sync>> {
         self.systems.iter_mut()
     }
 }
@@ -50,13 +46,13 @@ pub struct ExecutionContext<'a> {
     pub(crate) event_queue: &'a EventQueue,
 }
 
-pub trait System {
+pub trait System: Send {
     fn execute<'a>(&'a mut self, ctx: &'a ExecutionContext<'a>);
 }
 
 pub struct Function<F, M>
 where
-    F: SystemFn<M>,
+    F: Send + SystemFn<M>,
 {
     system_fn: F,
     _marker: PhantomData<M>,
@@ -64,7 +60,8 @@ where
 
 impl<F, M> System for Function<F, M>
 where
-    F: SystemFn<M>,
+    F: Send + SystemFn<M>,
+    M: Send,
 {
     fn execute<'a>(&'a mut self, ctx: &'a ExecutionContext<'a>) {
         let parameters = F::Parameter::fetch(ctx);
@@ -77,13 +74,13 @@ pub trait Into<M> {
     fn into(system: Self) -> Self::SystemType;
 }
 
-impl System for Box<dyn System> {
+impl System for Box<dyn System + Send + Sync> {
     fn execute<'a>(&'a mut self, ctx: &'a ExecutionContext<'a>) {
         self.deref_mut().execute(ctx);
     }
 }
 
-impl Into<()> for Box<dyn System> {
+impl Into<()> for Box<dyn System + Send + Sync> {
     type SystemType = Self;
 
     fn into(system: Self) -> Self::SystemType {
@@ -93,7 +90,8 @@ impl Into<()> for Box<dyn System> {
 
 impl<F, M> Into<M> for F
 where
-    F: SystemFn<M>,
+    F: SystemFn<M> + Send,
+    M: Send,
 {
     type SystemType = Function<F, M>;
 
@@ -113,7 +111,7 @@ pub trait SystemFn<M>: 'static {
 
 impl<F> SystemFn<()> for F
 where
-    F: FnMut() + 'static,
+    F: FnMut() + Send + Sync + 'static,
 {
     type Parameter = ();
 
@@ -128,7 +126,7 @@ macro_rules! impl_systemfn_for_tuples {
         #[allow(non_snake_case)]
         impl<F: 'static, $head, $($tail,)*> SystemFn<fn($head, $($tail,)*)> for F
         where
-            for<'a> &'a mut F: FnMut($head, $($tail,)*) + FnMut($head::Item<'a>, $($tail::Item<'a>,)*),
+            for<'a> &'a mut F: FnMut($head, $($tail,)*) + FnMut($head::Item<'a>, $($tail::Item<'a>,)*) + Send + Sync,
             $head: Parameter,
             $($tail: Parameter,)*
         {
@@ -190,10 +188,10 @@ impl Parameter for &CommandBuffer {
     }
 }
 
-pub struct Res<'a, T>(pub Ref<'a, T>);
+pub struct Res<'a, T>(pub ResourceRef<'a, T>);
 impl<T> Parameter for Res<'_, T>
 where
-    T: 'static,
+    T: 'static + Send,
 {
     type Item<'a> = Res<'a, T>;
     fn fetch<'a>(execution_context: &'a ExecutionContext<'a>) -> Self::Item<'a> {
@@ -204,10 +202,10 @@ where
     }
 }
 
-pub struct ResMut<'a, T>(pub RefMut<'a, T>);
+pub struct ResMut<'a, T>(pub ResourceRefMut<'a, T>);
 impl<T> Parameter for ResMut<'_, T>
 where
-    T: 'static,
+    T: 'static + Send,
 {
     type Item<'a> = ResMut<'a, T>;
     fn fetch<'c>(execution_context: &'c ExecutionContext<'c>) -> Self::Item<'c> {
@@ -236,7 +234,7 @@ where
 
 impl<'q, E> Parameter for EventWriter<'q, E>
 where
-    E: 'static,
+    E: 'static + Send,
 {
     type Item<'a> = EventWriter<'a, E>;
 

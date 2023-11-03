@@ -1,8 +1,9 @@
 use std::{
     any::Any,
-    cell::RefCell,
-    rc::Rc,
-    sync::atomic::{AtomicUsize, Ordering},
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc, Mutex,
+    },
 };
 
 use crate::{
@@ -14,7 +15,7 @@ use crate::{
 
 pub struct CommandBuffer {
     next_entity_id: AtomicUsize,
-    commands: Rc<RefCell<Vec<Box<dyn Command>>>>,
+    commands: Arc<Mutex<Vec<Box<dyn Command + Send + Sync>>>>,
 }
 
 impl CommandBuffer {
@@ -22,12 +23,12 @@ impl CommandBuffer {
     pub fn new(next_entity_id: usize) -> Self {
         Self {
             next_entity_id: AtomicUsize::new(next_entity_id),
-            commands: Rc::new(RefCell::new(Vec::new())),
+            commands: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
     pub fn clear(&mut self) {
-        self.commands.borrow_mut().clear();
+        self.commands.lock().expect("Mutex is poisoned").clear();
     }
 
     pub fn insert_bundle(&self, entity_bundle: EntityBundle) -> EntityId {
@@ -54,17 +55,19 @@ impl CommandBuffer {
 
     pub fn insert<ED>(&self, entity: ED) -> EntityId
     where
-        ED: 'static + EntityDefinition,
+        ED: 'static + EntityDefinition + Send + Sync,
     {
         self.commands
-            .borrow_mut()
+            .lock()
+            .expect("Mutex is poisoned")
             .push(Box::new(InsertEntity::new(entity)));
         self.next_entity_id.fetch_add(1, Ordering::Relaxed)
     }
 
-    pub fn add_component<C: 'static>(&self, entity_id: EntityId, component: C) {
+    pub fn add_component<C: 'static + Send + Sync>(&self, entity_id: EntityId, component: C) {
         self.commands
-            .borrow_mut()
+            .lock()
+            .expect("Mutex is poisoned")
             .push(Box::new(InsertComponent::new(entity_id, component)));
     }
 
@@ -82,7 +85,8 @@ impl CommandBuffer {
         target: EntityId,
     ) {
         self.commands
-            .borrow_mut()
+            .lock()
+            .unwrap()
             .push(Box::new(InsertRelationship::new(
                 relationship_id,
                 source,
@@ -92,36 +96,43 @@ impl CommandBuffer {
 
     pub fn insert_resource<R>(&self, resource: R)
     where
-        R: 'static + Any,
+        R: 'static + Any + Send + Sync,
     {
         self.commands
-            .borrow_mut()
+            .lock()
+            .expect("Mutex is poisoned")
             .push(Box::new(InsertResource::new(resource)));
     }
 
     pub fn register_system_set(&self, system_set: SystemSet) {
         self.commands
-            .borrow_mut()
+            .lock()
+            .expect("Mutex is poisoned")
             .push(Box::new(RegisterSystemSet::new(system_set)));
     }
 
     pub fn register_system<S, M, ST>(&self, system: S)
     where
         S: Into<M, SystemType = ST>,
-        ST: System + 'static,
+        ST: 'static + System + Send + Sync,
     {
         self.commands
-            .borrow_mut()
+            .lock()
+            .expect("Mutex is poisoned")
             .push(Box::new(RegisterSystem::new(system)));
     }
 
-    pub fn flush_commands(&mut self) -> Vec<Box<dyn Command>> {
-        self.commands.borrow_mut().drain(..).collect::<Vec<_>>()
+    pub fn flush_commands(&mut self) -> Vec<Box<dyn Command + Send + Sync>> {
+        self.commands
+            .lock()
+            .expect("Mutex is poisoned")
+            .drain(..)
+            .collect::<Vec<_>>()
     }
 
     #[must_use]
     pub fn len(&self) -> usize {
-        self.commands.borrow().len()
+        self.commands.lock().expect("Mutex is poisoned").len()
     }
 
     #[must_use]
@@ -177,7 +188,7 @@ impl<C> InsertComponent<C> {
 
 impl<C> Command for InsertComponent<C>
 where
-    C: 'static,
+    C: 'static + Send + Sync,
 {
     fn apply(&mut self, ecs: &mut Ecs) {
         ecs.insert_component(self.entity_id, self.component.take().unwrap());
@@ -222,7 +233,7 @@ impl<R> InsertResource<R> {
 
 impl<R> Command for InsertResource<R>
 where
-    R: 'static + Any,
+    R: 'static + Any + Send + Sync,
 {
     fn apply(&mut self, ecs: &mut Ecs) {
         ecs.insert_resource(self.resource.take().expect("Missing resource"));
@@ -249,14 +260,14 @@ impl Command for RegisterSystemSet {
 }
 
 pub struct RegisterSystem {
-    system: Option<Box<dyn System>>,
+    system: Option<Box<dyn System + Send + Sync>>,
 }
 
 impl RegisterSystem {
     pub fn new<S, ST, M>(system: S) -> Self
     where
         S: Into<M, SystemType = ST>,
-        ST: System + 'static,
+        ST: 'static + System + Send + Sync,
     {
         Self {
             system: Some(Box::new(Into::into(system))),

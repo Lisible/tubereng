@@ -4,13 +4,11 @@
 use entity::{EntityId, EntityStore};
 use event::EventQueue;
 use log::{info, trace};
+
+use parking_lot::MutexGuard;
 use relationship::{RelationshipId, RelationshipStore};
-use resource::Resources;
-use std::{
-    any::Any,
-    cell::{Ref, RefMut},
-    fmt::Debug,
-};
+use resource::{ResourceRef, ResourceRefMut, Resources};
+use std::{any::Any, fmt::Debug, thread};
 use system::{ExecutionContext, System, SystemSet};
 
 use commands::CommandBuffer;
@@ -83,16 +81,18 @@ impl Ecs {
         trace!("Running systems...");
         self.event_queue.swap_and_clear();
         for system_set in &mut self.system_sets {
-            for system in system_set.iter_mut() {
-                let ctx = ExecutionContext {
-                    command_buffer: &self.pending_commands,
-                    entity_store: &self.entity_store,
-                    relationship_store: &self.relationship_store,
-                    resources: &self.resources,
-                    event_queue: &self.event_queue,
-                };
-                system.execute(&ctx);
-            }
+            thread::scope(|s| {
+                for system in system_set.iter_mut() {
+                    let ctx = ExecutionContext {
+                        command_buffer: &self.pending_commands,
+                        entity_store: &self.entity_store,
+                        relationship_store: &self.relationship_store,
+                        resources: &self.resources,
+                        event_queue: &self.event_queue,
+                    };
+                    s.spawn(move || system.execute(&ctx));
+                }
+            });
         }
         trace!("Systems all ran.");
     }
@@ -109,7 +109,11 @@ impl Ecs {
         self.entity_store.insert(entity)
     }
 
-    pub fn insert_component<C: 'static>(&mut self, entity_id: EntityId, component: C) {
+    pub fn insert_component<C: 'static + Send + Sync>(
+        &mut self,
+        entity_id: EntityId,
+        component: C,
+    ) {
         self.entity_store.write_component(entity_id, component);
     }
 
@@ -125,23 +129,23 @@ impl Ecs {
 
     pub fn insert_resource<R>(&mut self, resource: R)
     where
-        R: Any,
+        R: Any + Send + Sync,
     {
         self.resources.insert(resource);
     }
 
     #[must_use]
-    pub fn resource<R>(&self) -> Option<Ref<R>>
+    pub fn resource<R>(&self) -> Option<ResourceRef<R>>
     where
-        R: Any,
+        R: Any + Send,
     {
         self.resources.resource::<R>()
     }
 
     #[must_use]
-    pub fn resource_mut<R>(&self) -> Option<RefMut<R>>
+    pub fn resource_mut<R>(&self) -> Option<ResourceRefMut<R>>
     where
-        R: Any,
+        R: Any + Send,
     {
         self.resources.resource_mut::<R>()
     }
@@ -162,10 +166,7 @@ impl Ecs {
         self.pending_commands = CommandBuffer::new(self.entity_count());
     }
 
-    #[must_use]
-    pub fn event_queue_mut<'a>(
-        &'a mut self,
-    ) -> RefMut<'a, Vec<Box<(dyn std::any::Any + 'static)>>> {
+    pub fn event_queue_mut(&mut self) -> MutexGuard<Vec<Box<dyn Any + Send>>> {
         self.event_queue.pending_events_mut()
     }
 }
@@ -184,7 +185,7 @@ pub trait EntityDefinition: Debug {
     );
 }
 
-impl EntityDefinition for Box<dyn EntityDefinition> {
+impl EntityDefinition for Box<dyn EntityDefinition + Send + Sync> {
     fn write_into_entity_store(
         self: Box<Self>,
         entity_store: &mut EntityStore,
@@ -205,7 +206,7 @@ impl EntityDefinition for () {
 
 macro_rules! impl_entity_definition_for_tuples {
     ($head:ident: $head_i:tt, $($tail:ident: $tail_i:tt,)*) => {
-        impl<$head: 'static + Debug, $($tail: 'static + Debug,)*> EntityDefinition for ($head, $($tail,)*) {
+        impl<$head: 'static + Send + Sync + Debug, $($tail: 'static + Send + Sync + Debug,)*> EntityDefinition for ($head, $($tail,)*) {
             fn write_into_entity_store(self: Box<Self>, entity_store: &mut EntityStore, entity_id: EntityId) {
                 entity_store.write_component(entity_id, self.$head_i);
                 $(entity_store.write_component(entity_id, self.$tail_i);)*

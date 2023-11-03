@@ -1,49 +1,48 @@
 use std::{
     any::{Any, TypeId},
-    cell::{Ref, RefCell, RefMut},
-    marker::PhantomData,
-    rc::Rc,
+    marker::PhantomData, sync::Arc,
 };
 
+use parking_lot::{Mutex, MutexGuard};
+
+
 pub struct EventQueue {
-    pending_events: Rc<RefCell<Vec<Box<dyn Any>>>>,
-    next_events: Rc<RefCell<Vec<Box<dyn Any>>>>,
+    pending_events: Arc<Mutex<Vec<Box<dyn Any + Send>>>>,
+    next_events: Arc<Mutex<Vec<Box<dyn Any + Send>>>>,
 }
 
 impl EventQueue {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            pending_events: Rc::new(RefCell::new(Vec::new())),
-            next_events: Rc::new(RefCell::new(Vec::new())),
+            pending_events: Arc::new(Mutex::new(Vec::new())),
+            next_events: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
     pub fn push<E>(&self, event: E)
     where
-        E: 'static + Any,
+        E: 'static + Any + Send,
     {
-        self.next_events.borrow_mut().push(Box::new(event));
+        self.next_events.lock().push(Box::new(event));
     }
 
     pub fn swap_and_clear(&mut self) {
         std::mem::swap(&mut self.pending_events, &mut self.next_events);
-        self.next_events.borrow_mut().clear();
+        self.next_events.lock().clear();
     }
 
-    #[must_use]
-    pub fn pending_events(&self) -> Ref<Vec<Box<dyn Any>>> {
-        self.pending_events.borrow()
+    pub fn pending_events(&self) -> MutexGuard<Vec<Box<dyn Any + Send>>> {
+        self.pending_events.lock()
     }
 
-    #[must_use]
-    pub fn pending_events_mut(&mut self) -> RefMut<Vec<Box<dyn Any>>> {
-        self.pending_events.borrow_mut()
+    pub fn pending_events_mut(&mut self) -> MutexGuard<Vec<Box<dyn Any + Send>>> {
+        self.pending_events.lock()
     }
     
     #[must_use]
     pub fn len(&self) -> usize {
-        self.pending_events.borrow().len()
+        self.pending_events.lock().len()
     }
 
     #[must_use]
@@ -65,7 +64,7 @@ pub struct EventWriter<'q, E> {
 
 impl<'q, E> EventWriter<'q, E>
 where
-    E: 'static,
+    E: 'static + Send,
 {
     #[must_use]
     pub fn new(queue: &'q EventQueue) -> Self {
@@ -81,7 +80,7 @@ where
 }
 
 pub struct EventReader<'q, E> {
-    queue: Ref<'q, Vec<Box<dyn Any>>>,
+    queue: MutexGuard<'q, Vec<Box<dyn Any + Send>>>,
     _marker: PhantomData<E>,
 }
 
@@ -90,7 +89,7 @@ where
     E: 'static,
 {
     #[must_use]
-    pub fn new(queue: Ref<'q, Vec<Box<dyn Any>>>) -> Self {
+    pub fn new(queue: MutexGuard<'q, Vec<Box<dyn Any + Send>>>) -> Self {
         Self {
             queue,
             _marker: PhantomData,

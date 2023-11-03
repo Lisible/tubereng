@@ -1,13 +1,15 @@
-use std::{
-    cell::{Ref, RefMut},
-    marker::PhantomData,
-};
+use std::marker::PhantomData;
+
+use parking_lot::{MappedRwLockReadGuard, MappedRwLockWriteGuard};
 
 use crate::{
     entity::EntityStore,
     relationship::{Relationship, RelationshipId, RelationshipStore},
     EntityId,
 };
+
+pub type ComponentRef<'a, T> = MappedRwLockReadGuard<'a, T>;
+pub type ComponentRefMut<'a, T> = MappedRwLockWriteGuard<'a, T>;
 
 pub struct Q<'q, QD>
 where
@@ -191,22 +193,31 @@ pub trait Argument<'a>: Sized {
     fn fetch(entity_store: &'a EntityStore, index: usize) -> Option<Self::Type>;
 }
 
-impl<'a, T: 'static> Argument<'a> for &T {
-    type Type = Ref<'a, T>;
+impl<'a, T: 'static> Argument<'a> for &T
+where
+    T: Send,
+{
+    type Type = ComponentRef<'a, T>;
     fn fetch(entity_store: &'a EntityStore, index: usize) -> Option<Self::Type> {
         entity_store.query_component(index)
     }
 }
 
-impl<'a, T: 'static> Argument<'a> for &mut T {
-    type Type = RefMut<'a, T>;
+impl<'a, T: 'static> Argument<'a> for &mut T
+where
+    T: Send,
+{
+    type Type = ComponentRefMut<'a, T>;
     fn fetch(entity_store: &'a EntityStore, index: usize) -> Option<Self::Type> {
         entity_store.query_component_mut(index)
     }
 }
 
-impl<'a, T: 'static> Argument<'a> for Option<&T> {
-    type Type = Option<Ref<'a, T>>;
+impl<'a, T: 'static> Argument<'a> for Option<&T>
+where
+    T: Send,
+{
+    type Type = Option<ComponentRef<'a, T>>;
 
     fn fetch(entity_store: &'a EntityStore, index: usize) -> Option<Self::Type> {
         match entity_store.query_component(index) {
@@ -216,8 +227,11 @@ impl<'a, T: 'static> Argument<'a> for Option<&T> {
     }
 }
 
-impl<'a, T: 'static> Argument<'a> for Option<&mut T> {
-    type Type = Option<RefMut<'a, T>>;
+impl<'a, T: 'static> Argument<'a> for Option<&mut T>
+where
+    T: Send,
+{
+    type Type = Option<ComponentRefMut<'a, T>>;
     fn fetch(entity_store: &'a EntityStore, index: usize) -> Option<Self::Type> {
         match entity_store.query_component_mut(index) {
             Some(component) => Some(Some(component)),

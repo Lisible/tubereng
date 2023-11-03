@@ -1,9 +1,11 @@
 use crate::relationship::Relationship;
+use parking_lot::{
+    MappedRwLockReadGuard, MappedRwLockWriteGuard, RwLock, RwLockReadGuard, RwLockWriteGuard,
+};
 use std::{
     any::{Any, TypeId},
-    cell::{Ref, RefCell, RefMut},
     collections::{HashMap, HashSet},
-    rc::Rc,
+    sync::Arc,
 };
 
 use log::trace;
@@ -12,10 +14,10 @@ use crate::{relationship::RelationshipId, EntityDefinition};
 
 pub type EntityId = usize;
 
-type ComponentStore = Vec<Option<Rc<RefCell<dyn Any>>>>;
+type ComponentStore = Vec<Option<Arc<RwLock<dyn Any + Sync + Send>>>>;
 
 pub struct EntityBundle {
-    pub(crate) entities: Vec<Box<dyn EntityDefinition>>,
+    pub(crate) entities: Vec<Box<dyn EntityDefinition + Sync + Send>>,
     pub(crate) relationships: Vec<HashMap<RelationshipId, Vec<usize>>>,
     pub(crate) root: usize,
 }
@@ -32,7 +34,7 @@ impl EntityBundle {
 
     pub fn add_entity<ED>(&mut self, entity_definition: ED) -> usize
     where
-        ED: 'static + EntityDefinition,
+        ED: 'static + EntityDefinition + Send + Sync,
     {
         self.entities.push(Box::new(entity_definition));
         self.relationships.push(HashMap::new());
@@ -105,7 +107,11 @@ impl EntityStore {
         entity_id
     }
 
-    pub(crate) fn write_component<C: 'static>(&mut self, entity_id: EntityId, component: C) {
+    pub(crate) fn write_component<C: 'static + Send + Sync>(
+        &mut self,
+        entity_id: EntityId,
+        component: C,
+    ) {
         assert!(
             entity_id < self.next_entity_id,
             "Tried to write a component in a unallocated entity"
@@ -117,30 +123,47 @@ impl EntityStore {
             .or_insert_with(Vec::new);
 
         component_store.resize_with(self.next_entity_id, || None);
-        component_store[entity_id] = Some(Rc::new(RefCell::new(component)));
+        component_store[entity_id] = Some(Arc::new(RwLock::new(component)));
     }
 
     #[must_use]
-    pub(crate) fn query_component<T: 'static>(&self, index: usize) -> Option<Ref<T>> {
-        Some(Ref::map(
+    pub(crate) fn query_component<T: 'static + Send>(
+        &self,
+        index: usize,
+    ) -> Option<MappedRwLockReadGuard<T>> {
+        trace!(
+            "Locking component {:?} for entity {}",
+            TypeId::of::<T>(),
+            index
+        );
+        Some(RwLockReadGuard::map(
             self.components
                 .get(&TypeId::of::<T>())?
                 .get(index)?
                 .as_ref()?
-                .borrow(),
-            |r| r.downcast_ref().unwrap(),
+                .as_ref()
+                .read(),
+            |e| e.downcast_ref().unwrap(),
         ))
     }
 
     #[must_use]
-    pub(crate) fn query_component_mut<T: 'static>(&self, index: usize) -> Option<RefMut<T>> {
-        Some(RefMut::map(
+    pub(crate) fn query_component_mut<T: 'static>(
+        &self,
+        index: usize,
+    ) -> Option<MappedRwLockWriteGuard<T>> {
+        trace!(
+            "Locking component {:?} for entity {}",
+            TypeId::of::<T>(),
+            index
+        );
+        Some(RwLockWriteGuard::map(
             self.components
                 .get(&TypeId::of::<T>())?
                 .get(index)?
                 .as_ref()?
-                .borrow_mut(),
-            |r| r.downcast_mut().unwrap(),
+                .write(),
+            |e| e.downcast_mut().unwrap(),
         ))
     }
 }
