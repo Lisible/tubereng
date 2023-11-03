@@ -97,6 +97,27 @@ where
             relationship_store: self.relationship_store,
         })
     }
+
+    pub fn for_each_parallel<'a, F>(self, chunk_size: usize, f: F)
+    where
+        F: Fn(QD::ResultType) + Send + Sync + 'a,
+    {
+        let entity_ids = (0..self.entity_store.entity_count()).collect::<Vec<usize>>();
+        let entity_chunks = entity_ids.chunks(chunk_size);
+        std::thread::scope(|s| {
+            let f = &f;
+            for chunk in entity_chunks {
+                s.spawn(move || {
+                    for e in chunk {
+                        match QD::fetch(self.entity_store, *e) {
+                            Some(result) => f(result),
+                            None => continue,
+                        }
+                    }
+                });
+            }
+        });
+    }
 }
 
 pub struct IterWithIndices<'q, QD>
