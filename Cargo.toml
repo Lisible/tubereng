@@ -23,3 +23,6 @@ tubereng-graphics = { path = "crates/tubereng-graphics" }
 tubereng-input = { path = "crates/tubereng-input" }
 tubereng-gltf = { path = "crates/tubereng-gltf" }
 tubereng-scene = { path = "crates/tubereng-scene" }
+
+[features]
+egui = ["tubereng-engine/egui", "tubereng-graphics/egui", "tubereng-winit/egui"]

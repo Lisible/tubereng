@@ -18,8 +18,11 @@ wgpu = "0.18"
 bytemuck = { version = "1.12", features = [ "derive" ] }
 serde = { version = "1", features = ["derive"] }
 log = "0.4"
-egui = "0.23"
-egui_wgpu_backend = "0.27"
+egui = { version = "0.23", optional = true }
+egui_wgpu_backend = { version = "0.27", optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wgpu = { version = "0.16", features = ["webgl"] }
+
+[features]
+egui = ["dep:egui", "dep:egui_wgpu_backend"]

@@ -1,6 +1,8 @@
 #![warn(clippy::pedantic)]
 
+#[cfg(feature = "egui")]
 use egui::{FontDefinitions, Style};
+#[cfg(feature = "egui")]
 use egui_winit_platform::{Platform, PlatformDescriptor};
 use log::info;
 use std::sync::Arc;
@@ -66,6 +68,7 @@ impl WinitTuberRunner {
             engine.application_title()
         );
 
+        #[cfg(feature = "egui")]
         let mut platform = Platform::new(PlatformDescriptor {
             physical_width: window.inner_size().width,
             physical_height: window.inner_size().height,
@@ -82,6 +85,7 @@ impl WinitTuberRunner {
         let start_time = Instant::now();
         event_loop.run(move |event, _, control_flow| {
             control_flow.set_poll();
+            #[cfg(feature = "egui")]
             platform.handle_event(&event);
             match event {
                 Event::WindowEvent {
@@ -101,6 +105,7 @@ impl WinitTuberRunner {
                     engine.resize(WindowSize::new(new_inner_size.width, new_inner_size.height));
                 }
                 Event::MainEventsCleared => {
+                    #[cfg(feature = "egui")]
                     platform.update_time(start_time.elapsed().as_secs_f64());
                     let frame_start_instant = Instant::now();
                     let delta_time = (frame_start_instant - last_frame_start_instant).as_secs_f32();
@@ -108,11 +113,25 @@ impl WinitTuberRunner {
                         control_flow.set_exit();
                     }
 
+                    #[cfg(feature = "egui")]
                     platform.begin_frame();
-                    engine.update(delta_time, platform.context());
+
+                    engine.update(
+                        delta_time,
+                        #[cfg(feature = "egui")]
+                        platform.context(),
+                    );
+
+                    #[cfg(feature = "egui")]
                     let egui_output = platform.end_frame(Some(&window));
+
                     engine.prepare_render();
+
+                    #[cfg(feature = "egui")]
                     engine.render(platform.context(), egui_output);
+                    #[cfg(not(feature = "egui"))]
+                    engine.render();
+
                     engine.clear_last_frame_inputs();
                     last_frame_start_instant = frame_start_instant;
                 }

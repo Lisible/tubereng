@@ -54,6 +54,8 @@ where
     window: Arc<Window>,
     rendering_context: RenderingContext,
     pipeline: R,
+
+    #[cfg(feature = "egui")]
     egui_pass: egui_wgpu_backend::RenderPass,
 }
 
@@ -109,8 +111,10 @@ where
             &mut shader_modules,
         );
 
+        #[cfg(feature = "egui")]
         let egui_pass =
             egui_wgpu_backend::RenderPass::new(&device, surface_configuration.format, 1);
+
         let rendering_context = RenderingContext {
             device,
             queue,
@@ -129,8 +133,10 @@ where
 
         Self {
             window,
-            pipeline,
             rendering_context,
+            pipeline,
+
+            #[cfg(feature = "egui")]
             egui_pass,
         }
     }
@@ -199,8 +205,8 @@ where
     /// An error may be returned if the rendering fails
     pub fn render(
         &mut self,
-        egui_context: egui::Context,
-        egui_output: egui::FullOutput,
+        #[cfg(feature = "egui")] egui_context: egui::Context,
+        #[cfg(feature = "egui")] egui_output: egui::FullOutput,
     ) -> Result<()> {
         // TODO add proper error handling
         let output = self
@@ -222,6 +228,33 @@ where
         self.pipeline
             .render(&mut encoder, &view, &mut self.rendering_context)?;
 
+        #[cfg(feature = "egui")]
+        let tdelta = self.begin_egui_pass(&mut encoder, &view, &egui_context, egui_output);
+
+        self.rendering_context
+            .queue
+            .submit(std::iter::once(encoder.finish()));
+        output.present();
+
+        #[cfg(feature = "egui")]
+        self.end_egui_pass(tdelta);
+        self.rendering_context.draw_commands.clear();
+        Ok(())
+    }
+
+    #[cfg(feature = "egui")]
+    fn end_egui_pass(&mut self, tdelta: egui::TexturesDelta) {
+        self.egui_pass.remove_textures(tdelta).unwrap();
+    }
+
+    #[cfg(feature = "egui")]
+    fn begin_egui_pass(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        view: &wgpu::TextureView,
+        egui_context: &egui::Context,
+        egui_output: egui::FullOutput,
+    ) -> egui::TexturesDelta {
         #[allow(clippy::cast_possible_truncation)]
         let screen_descriptor = egui_wgpu_backend::ScreenDescriptor {
             physical_width: self.window.inner_size().width,
@@ -244,15 +277,9 @@ where
             &screen_descriptor,
         );
         self.egui_pass
-            .execute(&mut encoder, &view, &paint_jobs, &screen_descriptor, None)
+            .execute(encoder, view, &paint_jobs, &screen_descriptor, None)
             .unwrap();
-        self.rendering_context
-            .queue
-            .submit(std::iter::once(encoder.finish()));
-        output.present();
-        self.egui_pass.remove_textures(tdelta).unwrap();
-        self.rendering_context.draw_commands.clear();
-        Ok(())
+        tdelta
     }
 
     pub fn resize(&mut self, new_size: WindowSize) {

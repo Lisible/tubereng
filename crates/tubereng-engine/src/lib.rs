@@ -46,11 +46,14 @@ where
         self.ecs.run_setup_system();
     }
 
-    pub fn update(&mut self, delta_time: f32, egui_context: egui::Context) {
+    pub fn update(&mut self, delta_time: f32, #[cfg(feature = "egui")] egui_context: egui::Context) {
         trace!("Begin updating...");
         let now = Instant::now();
         self.update_delta_time_resource(delta_time);
+
+        #[cfg(feature = "egui")]
         self.update_egui_context(egui_context);
+
         self.ecs.run_systems();
         self.ecs.execute_pending_commands();
 
@@ -65,6 +68,7 @@ where
         self.ecs.insert_resource::<DeltaTime>(DeltaTime(delta_time));
     }
 
+        #[cfg(feature = "egui")]
     fn update_egui_context(&mut self, egui_context: egui::Context) {
         self.ecs.insert_resource::<egui::Context>(egui_context);
     }
@@ -117,13 +121,13 @@ where
 
     /// # Panics
     /// Might panic if the rendering fails
-    pub fn render(&mut self, egui_context: egui::Context, egui_output: egui::FullOutput) {
+    pub fn render(&mut self, #[cfg(feature = "egui")] egui_context: egui::Context, #[cfg(feature = "egui")] egui_output: egui::FullOutput) {
         let renderer = self
             .renderer
             .as_mut()
             .expect("The renderer is uninitialized");
         trace!("Begin frame render...");
-        renderer.render(egui_context, egui_output).unwrap();
+        renderer.render(#[cfg(feature = "egui")] egui_context, #[cfg(feature = "egui")] egui_output).unwrap();
         trace!("Frame render ended");
     }
 
