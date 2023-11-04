@@ -4,7 +4,7 @@
 use geometry::ModelCache;
 use material::{MaterialAsset, MaterialCache};
 use pipeline::RenderPipeline;
-use std::{collections::HashMap, future::Future};
+use std::{collections::HashMap, future::Future, sync::Arc};
 use texture::TextureCache;
 use tubereng_assets::{AssetHandle, AssetStore};
 use tubereng_ecs::{entity::EntityStore, relationship::RelationshipStore};
@@ -51,16 +51,20 @@ pub struct Renderer<R>
 where
     R: RenderPipeline,
 {
-    _window: Window,
+    window: Arc<Window>,
     rendering_context: RenderingContext,
     pipeline: R,
+    egui_pass: egui_wgpu_backend::RenderPass,
 }
 
 impl<R> Renderer<R>
 where
     R: RenderPipeline,
 {
-    pub async fn new(render_pipeline_settings: &R::RenderPipelineSettings, window: Window) -> Self {
+    pub async fn new(
+        render_pipeline_settings: &R::RenderPipelineSettings,
+        window: Arc<Window>,
+    ) -> Self {
         let size = window.inner_size();
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
@@ -69,7 +73,8 @@ where
 
         // Safety: WGPURenderer owns both the window and the surface, so the window will live as
         // long as the surface
-        let surface = unsafe { instance.create_surface(&window) }.expect("Surface creation failed");
+        let surface =
+            unsafe { instance.create_surface(&*window) }.expect("Surface creation failed");
         let adapter = Self::request_adapter(&instance, &surface)
             .await
             .expect("Adapter not found");
@@ -104,6 +109,8 @@ where
             &mut shader_modules,
         );
 
+        let egui_pass =
+            egui_wgpu_backend::RenderPass::new(&device, surface_configuration.format, 1);
         let rendering_context = RenderingContext {
             device,
             queue,
@@ -121,9 +128,10 @@ where
         };
 
         Self {
-            _window: window,
+            window,
             pipeline,
             rendering_context,
+            egui_pass,
         }
     }
 
@@ -189,7 +197,11 @@ where
 
     /// # Errors
     /// An error may be returned if the rendering fails
-    pub fn render(&mut self) -> Result<()> {
+    pub fn render(
+        &mut self,
+        egui_context: egui::Context,
+        egui_output: egui::FullOutput,
+    ) -> Result<()> {
         // TODO add proper error handling
         let output = self
             .rendering_context
@@ -208,12 +220,37 @@ where
                 });
 
         self.pipeline
-            .render(&mut encoder, view, &mut self.rendering_context)?;
+            .render(&mut encoder, &view, &mut self.rendering_context)?;
 
+        #[allow(clippy::cast_possible_truncation)]
+        let screen_descriptor = egui_wgpu_backend::ScreenDescriptor {
+            physical_width: self.window.inner_size().width,
+            physical_height: self.window.inner_size().height,
+            scale_factor: self.window.scale_factor() as f32,
+        };
+        let paint_jobs = egui_context.tessellate(egui_output.shapes);
+        let tdelta = egui_output.textures_delta;
+        self.egui_pass
+            .add_textures(
+                &self.rendering_context.device,
+                &self.rendering_context.queue,
+                &tdelta,
+            )
+            .unwrap();
+        self.egui_pass.update_buffers(
+            &self.rendering_context.device,
+            &self.rendering_context.queue,
+            &paint_jobs,
+            &screen_descriptor,
+        );
+        self.egui_pass
+            .execute(&mut encoder, &view, &paint_jobs, &screen_descriptor, None)
+            .unwrap();
         self.rendering_context
             .queue
             .submit(std::iter::once(encoder.finish()));
         output.present();
+        self.egui_pass.remove_textures(tdelta).unwrap();
         self.rendering_context.draw_commands.clear();
         Ok(())
     }

@@ -11,7 +11,7 @@ pub struct RenderTargetId(usize);
 
 pub struct RenderGraph<'layout> {
     render_passes: Vec<RenderPass<'layout>>,
-    render_targets: Vec<wgpu::TextureView>,
+    render_targets: Vec<&'layout wgpu::TextureView>,
 }
 
 impl<'layout> RenderGraph<'layout> {
@@ -25,7 +25,7 @@ impl<'layout> RenderGraph<'layout> {
 
     pub fn register_render_target(
         &mut self,
-        render_target_texture_view: wgpu::TextureView,
+        render_target_texture_view: &'layout wgpu::TextureView,
     ) -> RenderTargetId {
         self.render_targets.push(render_target_texture_view);
         RenderTargetId(self.render_targets.len() - 1)
@@ -52,7 +52,7 @@ impl<'layout> RenderGraph<'layout> {
                     view: &depth_buffer_texture.view,
                     depth_ops: Some(wgpu::Operations {
                         load: load_op,
-                        store: true,
+                        store: wgpu::StoreOp::Store,
                     }),
                     stencil_ops: None,
                 })
@@ -68,10 +68,12 @@ impl<'layout> RenderGraph<'layout> {
                         resolve_target: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Load,
-                            store: true,
+                            store: wgpu::StoreOp::Store,
                         },
                     })],
                     depth_stencil_attachment,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
                 });
 
             let pass_identifier = render_pass.identifier.to_string();

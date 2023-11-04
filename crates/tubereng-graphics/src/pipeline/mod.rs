@@ -32,7 +32,7 @@ pub trait RenderPipeline {
     fn render(
         &mut self,
         command_encoder: &mut wgpu::CommandEncoder,
-        view: wgpu::TextureView,
+        view: &wgpu::TextureView,
         rendering_context: &mut RenderingContext,
     ) -> Result<()>;
 }

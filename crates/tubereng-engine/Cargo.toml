@@ -12,3 +12,4 @@ tubereng-graphics = { path = "../tubereng-graphics" }
 tubereng-input = { path = "../tubereng-input" }
 tubereng-core = { path = "../tubereng-core" }
 log = "0.4"
+egui = "0.23"

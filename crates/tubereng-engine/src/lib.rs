@@ -46,10 +46,11 @@ where
         self.ecs.run_setup_system();
     }
 
-    pub fn update(&mut self, delta_time: f32) { 
+    pub fn update(&mut self, delta_time: f32, egui_context: egui::Context) {
         trace!("Begin updating...");
         let now = Instant::now();
         self.update_delta_time_resource(delta_time);
+        self.update_egui_context(egui_context);
         self.ecs.run_systems();
         self.ecs.execute_pending_commands();
 
@@ -61,8 +62,11 @@ where
     }
 
     fn update_delta_time_resource(&mut self, delta_time: f32) {
-        let mut delta_time_resource = self.ecs.resource_mut::<DeltaTime>().expect("No DeltaTime resource found in Ecs");
-        delta_time_resource.0 = delta_time;
+        self.ecs.insert_resource::<DeltaTime>(DeltaTime(delta_time));
+    }
+
+    fn update_egui_context(&mut self, egui_context: egui::Context) {
+        self.ecs.insert_resource::<egui::Context>(egui_context);
     }
 
     // TODO: Change this
@@ -91,9 +95,7 @@ where
         self.input_state().on_input(input);
     }
 
-    /// # Panics
-    /// Might panic if the rendering fails
-    pub fn render(&mut self) {
+    pub fn prepare_render(&mut self) {
         let renderer = self
             .renderer
             .as_mut()
@@ -111,8 +113,17 @@ where
             )
             .unwrap();
         trace!("Frame preparation ended, took {:?}", now.elapsed());
+    }
+
+    /// # Panics
+    /// Might panic if the rendering fails
+    pub fn render(&mut self, egui_context: egui::Context, egui_output: egui::FullOutput) {
+        let renderer = self
+            .renderer
+            .as_mut()
+            .expect("The renderer is uninitialized");
         trace!("Begin frame render...");
-        renderer.render().unwrap();
+        renderer.render(egui_context, egui_output).unwrap();
         trace!("Frame render ended");
     }
 

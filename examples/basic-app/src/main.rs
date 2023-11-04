@@ -129,6 +129,7 @@ fn setup(command_buffer: &CommandBuffer, asset_store: ResMut<AssetStore>) {
     let mut system_set = SystemSet::new();
     system_set.add_system(spawn_light_at_camera_position);
     system_set.add_system(exit);
+    system_set.add_system(draw_egui);
     command_buffer.register_system_set(system_set);
 }
 
@@ -177,6 +178,26 @@ fn create_grid_mesh(width: usize, height: usize) -> MeshAsset {
             indices: Some(indices),
         },
     }
+}
+
+fn draw_egui(camera_query: Q<(&ActiveCamera, &Camera, &Transform)>, egui_ctx: Res<egui::Context>) {
+    let (_, _, transform) = camera_query.iter().next().unwrap();
+    let Res(egui_ctx) = egui_ctx;
+    let mut frame = egui::containers::Frame::side_top_panel(&egui_ctx.style());
+    frame = frame.fill(egui::Color32::from_rgba_premultiplied(0, 0, 0, 200));
+
+    let pos = &transform.translation;
+    egui::SidePanel::left("panel")
+        .resizable(true)
+        .frame(frame)
+        .show(&egui_ctx, |ui| {
+            ui.horizontal_wrapped(|ui| {
+                ui.label(format!(
+                    "Position:\nX: {}\nY: {}\nZ: {}",
+                    pos.x, pos.y, pos.z
+                ));
+            });
+        });
 }
 
 fn exit(exit_request_writer: EventWriter<ExitRequest>, input: Res<InputState>) {

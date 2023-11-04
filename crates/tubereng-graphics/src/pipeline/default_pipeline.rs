@@ -309,7 +309,6 @@ impl DefaultRenderPipeline {
         asset_store: &mut AssetStore,
     ) -> Result<Option<AssetHandle<MaterialAsset>>> {
         Ok(if let Some(material_handle) = material {
-            let material_handle = material_handle;
             if !ctx.material_cache.has(**material_handle) {
                 ctx.material_cache.load(
                     **material_handle,
@@ -497,12 +496,14 @@ impl RenderPipeline for DefaultRenderPipeline {
         trace!("Entity count: {}", entity_store.entity_count());
         trace!("Starting entity DFS");
         while let Some((parent, entity)) = entities_to_process.pop() {
-            let Some((mesh, material, transform,)) = Q::<(
-                Option<&AssetHandle<MeshAsset>>,
-                Option<&AssetHandle<MaterialAsset>>,
-                &Transform,
-            )>::new(entity_store, relationship_store)
-            .with_id(entity) else {
+            let Some((mesh, material, transform)) =
+                Q::<(
+                    Option<&AssetHandle<MeshAsset>>,
+                    Option<&AssetHandle<MaterialAsset>>,
+                    &Transform,
+                )>::new(entity_store, relationship_store)
+                .with_id(entity)
+            else {
                 continue;
             };
 
@@ -567,7 +568,7 @@ impl RenderPipeline for DefaultRenderPipeline {
     fn render(
         &mut self,
         command_encoder: &mut wgpu::CommandEncoder,
-        view: wgpu::TextureView,
+        view: &wgpu::TextureView,
         ctx: &mut RenderingContext,
     ) -> Result<()> {
         let mut render_graph = RenderGraph::new();
@@ -675,7 +676,6 @@ fn load_mesh_into_cache_if_required(
     asset_store: &mut AssetStore,
 ) -> Result<Option<AssetHandle<MeshAsset>>> {
     Ok(if let Some(mesh_handle) = mesh {
-        let mesh_handle = mesh_handle;
         if !ctx.model_cache.has(**mesh_handle) {
             ctx.model_cache.load(
                 **mesh_handle,

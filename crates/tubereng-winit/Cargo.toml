@@ -12,6 +12,8 @@ tubereng-graphics = { path = "../tubereng-graphics" }
 winit = "0.28"
 log = "0.4"
 cfg-if = "1"
+egui_winit_platform = "0.20"
+egui = "0.23"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 console_error_panic_hook = "0.1"

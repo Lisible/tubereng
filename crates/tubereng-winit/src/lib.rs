@@ -1,8 +1,10 @@
 #![warn(clippy::pedantic)]
 
-use std::time::Instant;
-
+use egui::{FontDefinitions, Style};
+use egui_winit_platform::{Platform, PlatformDescriptor};
 use log::info;
+use std::sync::Arc;
+use std::time::Instant;
 use tubereng_engine::Engine;
 use tubereng_graphics::{pipeline::RenderPipeline, Renderer, WindowSize};
 use tubereng_input::{keyboard::Key, Input};
@@ -24,16 +26,19 @@ impl WinitTuberRunner {
     ///
     /// This might panic if an error occurs during the window initialization
     /// Or during the engine execution
+    #[allow(clippy::too_many_lines)]
     pub async fn run<R>(mut engine: Engine<R>)
     where
         R: 'static + RenderPipeline,
     {
         info!("Engine starting up...");
         let event_loop = EventLoop::new();
-        let window = WindowBuilder::new()
-            .with_title(engine.application_title())
-            .build(&event_loop)
-            .unwrap();
+        let window = Arc::new(
+            WindowBuilder::new()
+                .with_title(engine.application_title())
+                .build(&event_loop)
+                .unwrap(),
+        );
         window
             .set_cursor_grab(winit::window::CursorGrabMode::Confined)
             .unwrap();
@@ -61,15 +66,23 @@ impl WinitTuberRunner {
             engine.application_title()
         );
 
-        let renderer = Renderer::new(engine.render_pipeline_settings(), window).await;
+        let mut platform = Platform::new(PlatformDescriptor {
+            physical_width: window.inner_size().width,
+            physical_height: window.inner_size().height,
+            scale_factor: window.scale_factor(),
+            font_definitions: FontDefinitions::default(),
+            style: Style::default(),
+        });
+        let renderer = Renderer::new(engine.render_pipeline_settings(), window.clone()).await;
         engine.initialize_renderer(renderer);
-
         engine.run_setup_system();
 
         info!("Starting main loop...");
         let mut last_frame_start_instant = Instant::now();
+        let start_time = Instant::now();
         event_loop.run(move |event, _, control_flow| {
             control_flow.set_poll();
+            platform.handle_event(&event);
             match event {
                 Event::WindowEvent {
                     event: WindowEvent::CloseRequested,
@@ -88,14 +101,18 @@ impl WinitTuberRunner {
                     engine.resize(WindowSize::new(new_inner_size.width, new_inner_size.height));
                 }
                 Event::MainEventsCleared => {
+                    platform.update_time(start_time.elapsed().as_secs_f64());
                     let frame_start_instant = Instant::now();
                     let delta_time = (frame_start_instant - last_frame_start_instant).as_secs_f32();
                     if engine.should_exit() {
                         control_flow.set_exit();
                     }
 
-                    engine.update(delta_time);
-                    engine.render();
+                    platform.begin_frame();
+                    engine.update(delta_time, platform.context());
+                    let egui_output = platform.end_frame(Some(&window));
+                    engine.prepare_render();
+                    engine.render(platform.context(), egui_output);
                     engine.clear_last_frame_inputs();
                     last_frame_start_instant = frame_start_instant;
                 }
