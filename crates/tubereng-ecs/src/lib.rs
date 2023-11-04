@@ -152,18 +152,10 @@ impl Ecs {
 
     pub fn execute_pending_commands(&mut self) {
         let mut pending_commands = CommandBuffer::new(self.entity_count());
-
-        // We should probably improve this later,
-        // If the callback of a pending command inserts new command, they will
-        // go in self.pending_commands, so we continuously swap them for each
-        // nested callback depth
-        while !self.pending_commands.is_empty() {
-            std::mem::swap(&mut self.pending_commands, &mut pending_commands);
-            for mut command in pending_commands.flush_commands() {
-                command.apply(self);
-            }
+        std::mem::swap(&mut self.pending_commands, &mut pending_commands);
+        for mut command in pending_commands.flush_commands() {
+            command.apply(self);
         }
-        self.pending_commands = CommandBuffer::new(self.entity_count());
     }
 
     pub fn event_queue_mut(&mut self) -> MutexGuard<Vec<Box<dyn Any + Send>>> {
