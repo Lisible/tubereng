@@ -121,13 +121,25 @@ where
 
     /// # Panics
     /// Might panic if the rendering fails
-    pub fn render(&mut self, #[cfg(feature = "egui")] egui_context: egui::Context, #[cfg(feature = "egui")] egui_output: egui::FullOutput) {
+    #[cfg(not(feature = "egui"))]
+    pub fn render(&mut self) {
         let renderer = self
             .renderer
             .as_mut()
             .expect("The renderer is uninitialized");
         trace!("Begin frame render...");
-        renderer.render(#[cfg(feature = "egui")] egui_context, #[cfg(feature = "egui")] egui_output).unwrap();
+        renderer.render().unwrap();
+        trace!("Frame render ended");
+    }
+
+    #[cfg(feature = "egui")]
+    pub fn render(&mut self, egui_context: egui::Context, egui_output: egui::FullOutput) {
+        let renderer = self
+            .renderer
+            .as_mut()
+            .expect("The renderer is uninitialized");
+        trace!("Begin frame render...");
+        renderer.render(egui_context, egui_output).unwrap();
         trace!("Frame render ended");
     }
 
