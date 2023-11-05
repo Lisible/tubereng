@@ -23,6 +23,7 @@ impl InputState {
 
     pub fn clear_last_frame_inputs(&mut self) {
         self.mouse.clear_last_frame_inputs();
+        self.keyboard.clear_last_frame_inputs();
     }
 
     pub fn on_input(&mut self, input: Input) {
@@ -76,34 +77,51 @@ pub mod mouse {
 
 pub mod keyboard {
 
+    #[derive(Debug, Default, Copy, Clone)]
+    pub(crate) struct KeyState {
+        pub current: bool,
+        pub previous: bool,
+    }
+
     pub struct State {
-        pub(super) key_state: [bool; KEY_COUNT],
+        pub(super) key_state: [KeyState; KEY_COUNT],
     }
 
     impl State {
         #[must_use]
         pub fn new() -> Self {
             Self {
-                key_state: [false; KEY_COUNT],
+                key_state: [KeyState::default(); KEY_COUNT],
+            }
+        }
+
+        pub fn clear_last_frame_inputs(&mut self) {
+            for key_state in &mut self.key_state {
+                key_state.previous = key_state.current;
             }
         }
 
         #[must_use]
         pub fn is_key_down(&self, key: Key) -> bool {
-            self.key_state[key as usize]
+            self.key_state[key as usize].current
+        }
+
+        #[must_use]
+        pub fn was_key_down(&self, key: Key) -> bool {
+            self.key_state[key as usize].previous
         }
 
         #[must_use]
         pub fn is_key_up(&self, key: Key) -> bool {
-            !self.key_state[key as usize]
+            !self.key_state[key as usize].current
         }
 
         pub(crate) fn on_key_up(&mut self, key: Key) {
-            self.key_state[key as usize] = false;
+            self.key_state[key as usize].current = false;
         }
 
         pub(crate) fn on_key_down(&mut self, key: Key) {
-            self.key_state[key as usize] = true;
+            self.key_state[key as usize].current = true;
         }
     }
 
@@ -182,7 +200,7 @@ mod tests {
     #[test]
     fn input_state_check_key_down_when_key_is_down() {
         let mut input = InputState::new();
-        input.keyboard.key_state[Key::Escape as usize] = true;
+        input.keyboard.key_state[Key::Escape as usize].current = true;
         assert!(input.keyboard.is_key_down(Key::Escape));
     }
 

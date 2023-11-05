@@ -220,7 +220,7 @@ fn spawn_light_at_camera_position(
     light_transform.scale = Vector3f::new(0.1, 0.1, 0.1);
 
     let Res(input) = input;
-    if input.keyboard.is_key_down(Key::E) {
+    if input.keyboard.is_key_up(Key::E) && input.keyboard.was_key_down(Key::E) {
         command_buffer.insert((
             PointLight::default(),
             light_assets.model,
