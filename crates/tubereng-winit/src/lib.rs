@@ -113,6 +113,7 @@ impl WinitTuberRunner {
                         control_flow.set_exit();
                     }
 
+                    engine.begin_frame();
                     #[cfg(feature = "egui")]
                     platform.begin_frame();
 
@@ -134,6 +135,7 @@ impl WinitTuberRunner {
 
                     engine.clear_last_frame_inputs();
                     last_frame_start_instant = frame_start_instant;
+                    profiling::finish_frame!();
                 }
                 Event::DeviceEvent {
                     event: DeviceEvent::MouseMotion { delta },

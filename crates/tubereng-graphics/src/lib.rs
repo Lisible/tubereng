@@ -229,7 +229,13 @@ where
             .render(&mut encoder, &view, &mut self.rendering_context)?;
 
         #[cfg(feature = "egui")]
-        let tdelta = self.begin_egui_pass(&mut encoder, &view, &egui_context, egui_output);
+        let tdelta = {
+            let tdelta = self.begin_egui_pass(&mut encoder, &view, &egui_context, egui_output);
+
+            #[cfg(feature = "ingame_profiler")]
+            puffin_egui::profiler_window(&egui_context);
+            tdelta
+        };
 
         self.rendering_context
             .queue

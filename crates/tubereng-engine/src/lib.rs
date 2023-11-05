@@ -46,6 +46,12 @@ where
         self.ecs.run_setup_system();
     }
 
+    pub fn begin_frame(&self) {
+        #[cfg(feature = "profiler")]
+        puffin::GlobalProfiler::lock().new_frame();
+    }
+
+    #[tubereng_profiling_procmacros::function]
     pub fn update(&mut self, delta_time: f32, #[cfg(feature = "egui")] egui_context: egui::Context) {
         trace!("Begin updating...");
         let now = Instant::now();
@@ -99,6 +105,7 @@ where
         self.input_state().on_input(input);
     }
 
+    #[tubereng_profiling_procmacros::function]
     pub fn prepare_render(&mut self) {
         let renderer = self
             .renderer
@@ -122,6 +129,7 @@ where
     /// # Panics
     /// Might panic if the rendering fails
     #[cfg(not(feature = "egui"))]
+    #[tubereng_profiling_procmacros::function]
     pub fn render(&mut self) {
         let renderer = self
             .renderer
@@ -133,6 +141,7 @@ where
     }
 
     #[cfg(feature = "egui")]
+    #[tubereng_profiling_procmacros::function]
     pub fn render(&mut self, egui_context: egui::Context, egui_output: egui::FullOutput) {
         let renderer = self
             .renderer
@@ -220,6 +229,9 @@ where
         ecs.insert_resource(InputState::new());
         ecs.insert_resource(DeltaTime(0.0));
 
+        #[cfg(feature = "profiler")]
+        puffin::set_scopes_on(true);
+        
         Engine {
             application_title: self.application_title.unwrap_or("TuberApp"),
             ecs,

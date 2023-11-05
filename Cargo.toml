@@ -25,4 +25,7 @@ tubereng-gltf = { path = "crates/tubereng-gltf" }
 tubereng-scene = { path = "crates/tubereng-scene" }
 
 [features]
+default = []
 egui = ["tubereng-engine/egui", "tubereng-graphics/egui", "tubereng-winit/egui"]
+profiler = ["egui", "tubereng-engine/profiler"]
+ingame_profiler = ["profiler", "tubereng-graphics/ingame_profiler"]

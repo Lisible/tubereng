@@ -9,6 +9,7 @@ edition = "2021"
 tubereng-engine = { path = "../tubereng-engine" }
 tubereng-input = { path = "../tubereng-input" }
 tubereng-graphics = { path = "../tubereng-graphics" }
+profiling = "1.0"
 winit = "0.28"
 log = "0.4"
 cfg-if = "1"

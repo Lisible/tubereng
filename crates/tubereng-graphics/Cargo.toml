@@ -20,9 +20,11 @@ serde = { version = "1", features = ["derive"] }
 log = "0.4"
 egui = { version = "0.23", optional = true }
 egui_wgpu_backend = { version = "0.27", optional = true }
+puffin_egui = { version = "0.23", optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wgpu = { version = "0.16", features = ["webgl"] }
 
 [features]
 egui = ["dep:egui", "dep:egui_wgpu_backend"]
+ingame_profiler = ["egui", "dep:puffin_egui"]
