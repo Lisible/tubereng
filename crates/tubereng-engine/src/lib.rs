@@ -61,6 +61,9 @@ where
         for _ in Self::event_iter::<ExitRequest>(pending_events.as_slice()) {
             self.exit();
         }
+
+        let mut engine_statistics = self.ecs.resource_mut::<EngineStatistics>().expect("EngineStatistics resource is not present");
+        engine_statistics.entity_count = self.ecs.entity_count();
         trace!("Updating ended, took {:?}", now.elapsed());
     }
 
@@ -219,6 +222,7 @@ where
         ecs.insert_resource(AssetStore::<FS>::new());
         ecs.insert_resource(InputState::new());
         ecs.insert_resource(DeltaTime(0.0));
+        ecs.insert_resource(EngineStatistics { entity_count: 0 });
 
         Engine {
             application_title: self.application_title.unwrap_or("TuberApp"),
@@ -233,5 +237,16 @@ where
 impl Default for EngineBuilder {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[derive(Debug)]
+pub struct EngineStatistics {
+    entity_count: usize,
+}
+
+impl EngineStatistics {
+    #[must_use] pub fn entity_count(&self) -> usize{
+        self.entity_count
     }
 }
