@@ -27,10 +27,7 @@ impl RelationshipStore {
     }
 
     pub fn insert(&mut self, relationship_id: RelationshipId, source: EntityId, target: EntityId) {
-        let relationship_data = self
-            .relationships
-            .entry(relationship_id)
-            .or_insert_with(RelationshipData::new);
+        let relationship_data = self.relationships.entry(relationship_id).or_default();
 
         relationship_data.insert_source(target, source);
     }
@@ -50,14 +47,13 @@ impl RelationshipStore {
         R: Relationship,
     {
         let Some(relationship) = self.relationships.get(&R::relationship_id()) else {
-            return HashSet::new()
+            return HashSet::new();
         };
 
         relationship
-            .sources_by_target
-            .values()
-            .flat_map(|v| v.iter().copied())
-            .clone()
+            .targets_by_source
+            .keys()
+            .copied()
             .collect::<HashSet<_>>()
     }
 
@@ -87,18 +83,16 @@ impl RelationshipStore {
             return vec![];
         };
 
-        let mut res = vec![];
-        for target in relationship.sources_by_target.keys() {
-            if relationship.sources_by_target[target].contains(&source) {
-                res.push(*target);
-            }
-        }
-        res
+        relationship.targets_by_source[&source]
+            .iter()
+            .copied()
+            .collect()
     }
 }
 
 pub struct RelationshipData {
     sources_by_target: HashMap<EntityId, HashSet<EntityId>>,
+    targets_by_source: HashMap<EntityId, HashSet<EntityId>>,
 }
 
 impl RelationshipData {
@@ -106,6 +100,7 @@ impl RelationshipData {
     pub fn new() -> Self {
         Self {
             sources_by_target: HashMap::new(),
+            targets_by_source: HashMap::new(),
         }
     }
 
@@ -120,8 +115,12 @@ impl RelationshipData {
     pub fn insert_source(&mut self, target: EntityId, source: EntityId) {
         self.sources_by_target
             .entry(target)
-            .or_insert_with(HashSet::new)
+            .or_default()
             .insert(source);
+        self.targets_by_source
+            .entry(source)
+            .or_default()
+            .insert(target);
     }
 }
 
