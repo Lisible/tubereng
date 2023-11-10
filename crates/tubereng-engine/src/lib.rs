@@ -24,6 +24,7 @@ where
     renderer: Option<Renderer<R>>,
     render_pipeline_settings: R::RenderPipelineSettings,
     should_exit: bool,
+    last_update_duration: std::time::Duration,
 }
 
 pub struct ExitRequest;
@@ -64,7 +65,9 @@ where
 
         let mut engine_statistics = self.ecs.resource_mut::<EngineStatistics>().expect("EngineStatistics resource is not present");
         engine_statistics.entity_count = self.ecs.entity_count();
-        trace!("Updating ended, took {:?}", now.elapsed());
+        engine_statistics.last_update_duration= self.last_update_duration;
+        self.last_update_duration = now.elapsed();
+        trace!("Updating ended, took {:?}", self.last_update_duration);
     }
 
     fn update_delta_time_resource(&mut self, delta_time: f32) {
@@ -222,7 +225,8 @@ where
         ecs.insert_resource(AssetStore::<FS>::new());
         ecs.insert_resource(InputState::new());
         ecs.insert_resource(DeltaTime(0.0));
-        ecs.insert_resource(EngineStatistics { entity_count: 0 });
+        let last_update_duration = std::time::Duration::default();
+        ecs.insert_resource(EngineStatistics { entity_count: 0, last_update_duration });
 
         Engine {
             application_title: self.application_title.unwrap_or("TuberApp"),
@@ -230,6 +234,7 @@ where
             renderer: None,
             render_pipeline_settings: self.render_pipeline_settings,
             should_exit: false,
+            last_update_duration
         }
     }
 }
@@ -243,10 +248,15 @@ impl Default for EngineBuilder {
 #[derive(Debug)]
 pub struct EngineStatistics {
     entity_count: usize,
+    last_update_duration: std::time::Duration,
 }
 
 impl EngineStatistics {
-    #[must_use] pub fn entity_count(&self) -> usize{
+    #[must_use] pub fn entity_count(&self) -> usize {
         self.entity_count
+    }
+
+    #[must_use] pub fn last_update_duration(&self) -> std::time::Duration {
+       self.last_update_duration 
     }
 }
