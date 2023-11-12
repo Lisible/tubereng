@@ -58,21 +58,12 @@ impl RelationshipStore {
     }
 
     #[must_use]
-    pub fn sources_of<R>(&self, target: EntityId) -> Vec<EntityId>
+    pub fn sources_of<R>(&self, target: EntityId) -> Option<&HashSet<EntityId>>
     where
         R: Relationship,
     {
-        let Some(relationship) = self.relationships.get(&R::relationship_id()) else {
-            return vec![];
-        };
-
-        relationship
-            .sources_by_target
-            .get(&target)
-            .unwrap_or(&HashSet::new())
-            .iter()
-            .copied()
-            .collect::<Vec<_>>()
+        let relationship = self.relationships.get(&R::relationship_id())?;
+        relationship.sources_by_target.get(&target)
     }
     #[must_use]
     pub fn targets_of<R>(&self, source: EntityId) -> Vec<EntityId>
@@ -151,9 +142,9 @@ mod tests {
         let mut relationship_store = RelationshipStore::new();
         relationship_store.insert(ChildOf::relationship_id(), 1, 0);
         assert!(relationship_store.has(ChildOf::relationship_id(), 1, 0));
-        let children_of_0 = relationship_store.sources_of::<ChildOf>(0);
+        let children_of_0 = relationship_store.sources_of::<ChildOf>(0).unwrap();
         assert_eq!(children_of_0.len(), 1);
-        assert_eq!(children_of_0[0], 1);
+        assert_eq!(*children_of_0.iter().next().unwrap(), 1);
         let all_children_of_any = relationship_store.all_sources_of::<ChildOf>();
         assert_eq!(all_children_of_any.len(), 1);
         assert_eq!(*all_children_of_any.iter().next().unwrap(), 1);
@@ -165,9 +156,9 @@ mod tests {
         relationship_store.insert(ChildOf::relationship_id(), 1, 0);
         relationship_store.insert(ChildOf::relationship_id(), 2, 1);
         assert!(relationship_store.has(ChildOf::relationship_id(), 1, 0));
-        let children_of_0 = relationship_store.sources_of::<ChildOf>(0);
+        let children_of_0 = relationship_store.sources_of::<ChildOf>(0).unwrap();
         assert_eq!(children_of_0.len(), 1);
-        assert_eq!(children_of_0[0], 1);
+        assert_eq!(*children_of_0.iter().next().unwrap(), 1);
         let all_children_of_any = relationship_store.all_sources_of::<ChildOf>();
         assert_eq!(all_children_of_any.len(), 2);
     }

@@ -324,6 +324,73 @@ impl DefaultRenderPipeline {
             None
         })
     }
+
+    #[allow(clippy::too_many_arguments)]
+    fn compute_effective_transforms(
+        &mut self,
+        ctx: &mut RenderingContext,
+        entities_to_process: &mut Vec<(Option<usize>, usize)>,
+        transforms: &mut Vec<tubereng_math::matrix::Matrix4>,
+        asset_store: &mut AssetStore,
+        model_uniforms: &mut Vec<MeshUniform>,
+        entity_store: &EntityStore,
+        relationship_store: &RelationshipStore,
+    ) -> Result<()> {
+        let mut parent_transform_index = 0;
+        while let Some((parent, entity)) = entities_to_process.pop() {
+            let Some((mesh, material, transform)) =
+                Q::<(
+                    Option<&AssetHandle<MeshAsset>>,
+                    Option<&AssetHandle<MaterialAsset>>,
+                    &Transform,
+                )>::new(entity_store, relationship_store)
+                .with_id(entity)
+            else {
+                continue;
+            };
+
+            if let Some(children) = relationship_store.sources_of::<ChildOf>(entity) {
+                entities_to_process.extend(
+                    children
+                        .iter()
+                        .map(|&entity_id| (Some(parent_transform_index), entity_id)),
+                );
+            }
+
+            let material_handle =
+                self.load_material_into_cache_if_required(&material, ctx, asset_store)?;
+            let mesh_handle = load_mesh_into_cache_if_required(&mesh, ctx, asset_store)?;
+
+            let mut transform_matrix = transform.as_matrix4();
+            if let Some(parent) = parent {
+                transform_matrix *= transforms[parent];
+            }
+
+            if let Some(mesh_handle) = mesh_handle {
+                let model = ctx
+                    .model_cache
+                    .get(mesh_handle)
+                    .expect("Model not found in cache");
+                for mesh in &model.meshes {
+                    ctx.draw_commands.push(DrawCommand {
+                        vertex_buffer: mesh.vertex_buffer,
+                        index_buffer: mesh.index_buffer,
+                        element_count: mesh.element_count,
+                        vertex_count: mesh.vertex_count,
+                        material_handle: material_handle.unwrap(),
+                    });
+                    model_uniforms.push(MeshUniform {
+                        world_transform: transform_matrix.into(),
+                        inverse_world_transform: transform_matrix.try_inverse().unwrap().into(),
+                        _padding: [0u64; 16],
+                    });
+                }
+            }
+            transforms.push(transform_matrix);
+            parent_transform_index += 1;
+        }
+        Ok(())
+    }
 }
 
 #[derive(Default)]
@@ -490,62 +557,19 @@ impl RenderPipeline for DefaultRenderPipeline {
 
         let mut model_uniforms = vec![];
         let mut transforms: Vec<Matrix4f> = vec![];
-        let mut parent_transform_index = 0;
 
         let now = Instant::now();
         trace!("Entity count: {}", entity_store.entity_count());
         trace!("Starting entity DFS");
-        while let Some((parent, entity)) = entities_to_process.pop() {
-            let Some((mesh, material, transform)) =
-                Q::<(
-                    Option<&AssetHandle<MeshAsset>>,
-                    Option<&AssetHandle<MaterialAsset>>,
-                    &Transform,
-                )>::new(entity_store, relationship_store)
-                .with_id(entity)
-            else {
-                continue;
-            };
-
-            let children = relationship_store.sources_of::<ChildOf>(entity);
-            let children = children
-                .iter()
-                .map(|&entity_id| (Some(parent_transform_index), entity_id))
-                .collect::<Vec<_>>();
-            entities_to_process.extend_from_slice(&children);
-
-            let material_handle =
-                self.load_material_into_cache_if_required(&material, ctx, asset_store)?;
-            let mesh_handle = load_mesh_into_cache_if_required(&mesh, ctx, asset_store)?;
-
-            let mut transform_matrix = transform.as_matrix4();
-            if let Some(parent) = parent {
-                transform_matrix *= transforms[parent];
-            }
-
-            if let Some(mesh_handle) = mesh_handle {
-                let model = ctx
-                    .model_cache
-                    .get(mesh_handle)
-                    .expect("Model not found in cache");
-                for mesh in &model.meshes {
-                    ctx.draw_commands.push(DrawCommand {
-                        vertex_buffer: mesh.vertex_buffer,
-                        index_buffer: mesh.index_buffer,
-                        element_count: mesh.element_count,
-                        vertex_count: mesh.vertex_count,
-                        material_handle: material_handle.unwrap(),
-                    });
-                    model_uniforms.push(MeshUniform {
-                        world_transform: transform_matrix.into(),
-                        inverse_world_transform: transform_matrix.try_inverse().unwrap().into(),
-                        _padding: [0u64; 16],
-                    });
-                }
-            }
-            transforms.push(transform_matrix);
-            parent_transform_index += 1;
-        }
+        self.compute_effective_transforms(
+            ctx,
+            &mut entities_to_process,
+            &mut transforms,
+            asset_store,
+            &mut model_uniforms,
+            entity_store,
+            relationship_store,
+        )?;
         trace!("Entity DFS ended, lasted {:?}", now.elapsed());
 
         ctx.queue.write_buffer(
