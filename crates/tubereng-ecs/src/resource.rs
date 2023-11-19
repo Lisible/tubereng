@@ -8,8 +8,10 @@ use parking_lot::{
     MappedRwLockReadGuard, MappedRwLockWriteGuard, RwLock, RwLockReadGuard, RwLockWriteGuard,
 };
 
+type StoredResource = Arc<RwLock<dyn Any + Send + Sync>>;
+
 pub struct Resources {
-    resources: HashMap<TypeId, Arc<RwLock<dyn Any + Send + Sync>>>,
+    resources: HashMap<TypeId, StoredResource>,
 }
 
 pub type ResourceRef<'a, R> = MappedRwLockReadGuard<'a, R>;
