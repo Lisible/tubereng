@@ -24,17 +24,15 @@ impl WinitTuberRunner {
     ///
     /// Will return [`Err`] if the event loop cannot be created or run, or if
     /// the window cannot be created.
-    pub fn run() -> Result<(), WinitError> {
+    pub fn run(mut engine: Engine) -> Result<(), WinitError> {
         let event_loop = EventLoop::new().map_err(WinitError::EventLoopCreationFailed)?;
         let window = WindowBuilder::new()
-            .with_title("tuber-application")
+            .with_title(engine.application_title())
             .with_resizable(false)
             .with_inner_size(PhysicalSize::new(800, 600))
             .build(&event_loop)
             .map_err(WinitError::WindowCreationFailed)?;
         event_loop.set_control_flow(ControlFlow::Poll);
-
-        let mut engine = Engine;
         event_loop
             .run(move |event, elwt| match event {
                 Event::WindowEvent {

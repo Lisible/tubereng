@@ -1,5 +1,11 @@
-use tubereng::winit::{WinitError, WinitTuberRunner};
+use tubereng::{
+    engine::{Engine, EngineConfiguration},
+    winit::{WinitError, WinitTuberRunner},
+};
 
 fn main() -> Result<(), WinitError> {
-    WinitTuberRunner::run()
+    let engine = Engine::new(&EngineConfiguration {
+        application_title: "basic-app",
+    });
+    WinitTuberRunner::run(engine)
 }
