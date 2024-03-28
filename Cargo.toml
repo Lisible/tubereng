@@ -6,5 +6,9 @@ edition = "2021"
 [workspace]
 resolver = "2"
 members = [ 
+  "crates/*", 
   "examples/*",
 ]
+
+[dependencies]
+tubereng_winit = { path = "crates/tubereng_winit" }
