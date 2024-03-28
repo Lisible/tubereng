@@ -1,5 +1,6 @@
 #![warn(clippy::pedantic)]
 
+use tubereng_engine::Engine;
 use winit::{
     dpi::PhysicalSize,
     error::{EventLoopError, OsError},
@@ -32,6 +33,8 @@ impl WinitTuberRunner {
             .build(&event_loop)
             .map_err(WinitError::WindowCreationFailed)?;
         event_loop.set_control_flow(ControlFlow::Poll);
+
+        let mut engine = Engine;
         event_loop
             .run(move |event, elwt| match event {
                 Event::WindowEvent {
@@ -41,7 +44,14 @@ impl WinitTuberRunner {
                     elwt.exit();
                 }
                 Event::AboutToWait => {
+                    engine.update();
                     window.request_redraw();
+                }
+                Event::WindowEvent {
+                    event: WindowEvent::RedrawRequested,
+                    ..
+                } => {
+                    engine.render();
                 }
                 _ => {}
             })
