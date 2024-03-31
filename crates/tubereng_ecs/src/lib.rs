@@ -1,7 +1,12 @@
 #![warn(clippy::pedantic)]
 
 use log::trace;
-use std::{alloc::Layout, any::TypeId, collections::HashMap};
+use std::{
+    alloc::Layout,
+    any::{Any, TypeId},
+    cell::{Ref, RefCell, RefMut},
+    collections::HashMap,
+};
 
 use commands::CommandQueue;
 use component_store::ComponentStore;
@@ -14,11 +19,13 @@ pub mod system;
 
 pub type EntityId = usize;
 pub type ComponentStores = HashMap<TypeId, ComponentStore>;
+pub type Resources = HashMap<TypeId, RefCell<Box<dyn Any>>>;
 
 const MAX_ENTITY_COUNT: usize = 1024;
 pub struct Ecs {
     next_entity_id: EntityId,
     component_stores: ComponentStores,
+    resources: Resources,
     command_queue: CommandQueue,
     systems: Vec<system::System>,
 }
@@ -29,6 +36,7 @@ impl Ecs {
         Ecs {
             next_entity_id: 0,
             component_stores: ComponentStores::new(),
+            resources: Resources::new(),
             command_queue: CommandQueue::new(),
             systems: vec![],
         }
@@ -48,6 +56,39 @@ impl Ecs {
         trace!("Inserting entity {entity_id} with definition {entity_definition:?}");
         entity_definition.write_into_component_stores(entity_id, &mut self.component_stores);
         entity_id
+    }
+
+    /// Inserts a resource into the Ecs, replaces it if already present
+    pub fn insert_resource<R>(&mut self, resource: R)
+    where
+        R: Any,
+    {
+        self.resources
+            .insert(TypeId::of::<R>(), RefCell::new(Box::new(resource)));
+    }
+
+    /// Retrieves a ``Ref`` to a stored resource or None if its not found
+    ///
+    /// # Panics
+    ///
+    /// Will panic if the downcasting to the resource type
+    pub fn resource<R: Any>(&self) -> Option<Ref<'_, R>> {
+        Some(Ref::map(
+            self.resources.get(&TypeId::of::<R>())?.borrow(),
+            |r| r.downcast_ref::<R>().expect("Couldn't downcast resource"),
+        ))
+    }
+
+    /// Retrieves a ``RefMut`` to a stored resource or None if its not found
+    ///
+    /// # Panics
+    ///
+    /// Will panic if the downcasting to the resource type
+    pub fn resource_mut<R: Any>(&mut self) -> Option<RefMut<'_, R>> {
+        Some(RefMut::map(
+            self.resources.get(&TypeId::of::<R>())?.borrow_mut(),
+            |r| r.downcast_mut::<R>().expect("Couldn't downcast resource"),
+        ))
     }
 
     /// Returns an immutable reference to a component in the Ecs, or `None` if not found.
@@ -211,6 +252,7 @@ impl_entity_definition_for_tuple!(A: 0, B: 1, C: 2, D: 3, E: 4, F: 5,);
 
 #[cfg(test)]
 mod tests {
+
     use super::*;
 
     #[derive(Debug)]
@@ -316,5 +358,31 @@ mod tests {
         assert_eq!(ecs.component::<Health>(player), Some(&Health(10)));
         assert_eq!(ecs.component::<Health>(first_enemy), Some(&Health(4)));
         assert_eq!(ecs.component::<Health>(second_enemy), Some(&Health(1)));
+    }
+
+    #[test]
+    fn ecs_resource() {
+        #[derive(Debug, PartialEq)]
+        struct SomeResource(i32);
+        let mut ecs = Ecs::new();
+        ecs.insert_resource(SomeResource(23));
+
+        let r = ecs.resource::<SomeResource>().unwrap();
+        assert_eq!(&*r, &SomeResource(23));
+    }
+
+    #[test]
+    fn ecs_resource_mut() {
+        #[derive(Debug, PartialEq)]
+        struct SomeResource(i32);
+        let mut ecs = Ecs::new();
+        ecs.insert_resource(SomeResource(23));
+
+        let mut r = ecs.resource_mut::<SomeResource>().unwrap();
+        r.0 = 10;
+        std::mem::drop(r);
+
+        let r = ecs.resource::<SomeResource>().unwrap();
+        assert_eq!(&*r, &SomeResource(10));
     }
 }

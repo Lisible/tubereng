@@ -102,7 +102,7 @@ impl Argument for &CommandQueue {
 
 #[cfg(test)]
 mod tests {
-    use crate::{commands::InsertEntity, Ecs};
+    use crate::Ecs;
 
     use super::*;
 
