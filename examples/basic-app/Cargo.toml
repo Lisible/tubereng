@@ -7,3 +7,4 @@ edition = "2021"
 
 [dependencies]
 tubereng = { path = "../.." }
+env_logger = "0.11"
