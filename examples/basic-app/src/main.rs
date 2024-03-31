@@ -1,5 +1,5 @@
 use tubereng::{
-    ecs::commands::{CommandQueue, InsertEntity},
+    ecs::commands::CommandQueue,
     engine::Engine,
     winit::{WinitError, WinitTuberRunner},
 };

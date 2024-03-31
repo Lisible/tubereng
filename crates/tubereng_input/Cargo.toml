@@ -1,11 +1,9 @@
 [package]
-name = "tubereng_engine"
+name = "tubereng_input"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-tubereng_ecs = { path = "../tubereng_ecs" }
-tubereng_input = { path = "../tubereng_input" }
 log = "0.4"

@@ -1,4 +1,6 @@
 #![warn(clippy::pedantic)]
+use log::trace;
+use tubereng_input::Input;
 
 use tubereng_ecs::{
     system::{self},
@@ -20,6 +22,10 @@ impl Engine {
         self.ecs.run_systems();
     }
     pub fn render(&mut self) {}
+
+    pub fn on_input(&mut self, input: Input) {
+        trace!("Handling input: {:?}", input);
+    }
 
     #[must_use]
     pub fn application_title(&self) -> &'static str {
