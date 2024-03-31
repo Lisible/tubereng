@@ -1,6 +1,7 @@
 use tubereng::{
-    ecs::commands::CommandQueue,
+    ecs::{commands::CommandQueue, system::Res},
     engine::Engine,
+    input::InputState,
     winit::{WinitError, WinitTuberRunner},
 };
 
@@ -21,7 +22,16 @@ fn main() -> Result<(), WinitError> {
             queue.insert((Player, Position(23, 15)));
             queue.insert((Enemy, Position(2, 5)));
             queue.insert((Enemy, Position(3, 1)));
-            queue.register_system(|| println!("Some system"));
+            queue.register_system(|input_state: Res<InputState>| {
+                if input_state
+                    .keyboard
+                    .is_key_down(tubereng::input::keyboard::Key::A)
+                {
+                    println!("Key A down");
+                } else {
+                    println!("Key A up");
+                }
+            })
         })
         .build();
     WinitTuberRunner::run(engine)

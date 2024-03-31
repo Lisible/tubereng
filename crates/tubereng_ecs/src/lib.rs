@@ -84,7 +84,7 @@ impl Ecs {
     /// # Panics
     ///
     /// Will panic if the downcasting to the resource type
-    pub fn resource_mut<R: Any>(&mut self) -> Option<RefMut<'_, R>> {
+    pub fn resource_mut<R: Any>(&self) -> Option<RefMut<'_, R>> {
         Some(RefMut::map(
             self.resources.get(&TypeId::of::<R>())?.borrow_mut(),
             |r| r.downcast_mut::<R>().expect("Couldn't downcast resource"),
@@ -121,13 +121,21 @@ impl Ecs {
     }
 
     pub fn run_single_run_system(&mut self, system: &system::System) {
-        system.run(&mut self.component_stores, &mut self.command_queue);
+        system.run(
+            &mut self.component_stores,
+            &mut self.resources,
+            &mut self.command_queue,
+        );
         self.process_command_queue();
     }
 
     pub fn run_systems(&mut self) {
         for system in &self.systems {
-            system.run(&mut self.component_stores, &mut self.command_queue);
+            system.run(
+                &mut self.component_stores,
+                &mut self.resources,
+                &mut self.command_queue,
+            );
         }
     }
 
