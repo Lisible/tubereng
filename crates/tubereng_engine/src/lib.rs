@@ -1,6 +1,6 @@
 #![warn(clippy::pedantic)]
-use log::trace;
-use tubereng_input::Input;
+
+use tubereng_input::{Input, InputState};
 
 use tubereng_ecs::{
     system::{self},
@@ -23,8 +23,17 @@ impl Engine {
     }
     pub fn render(&mut self) {}
 
+    /// Handles the input
+    ///
+    /// # Panics
+    ///
+    /// Will panic if the ``InputState`` is missing from the engine resources
     pub fn on_input(&mut self, input: Input) {
-        trace!("Handling input: {:?}", input);
+        let mut input_state = self
+            .ecs
+            .resource_mut::<InputState>()
+            .expect("InputState should be present in the engine's resources");
+        input_state.on_input(input);
     }
 
     #[must_use]
@@ -62,6 +71,7 @@ impl EngineBuilder {
 
     pub fn build(&mut self) -> Engine {
         let mut ecs = Ecs::new();
+        ecs.insert_resource(InputState::new());
         ecs.run_single_run_system(
             &self
                 .init_system

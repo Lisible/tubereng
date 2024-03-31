@@ -76,6 +76,7 @@ pub mod mouse {
 }
 
 pub mod keyboard {
+    use log::trace;
 
     #[derive(Debug, Default, Copy, Clone)]
     pub(crate) struct KeyState {
@@ -117,10 +118,12 @@ pub mod keyboard {
         }
 
         pub(crate) fn on_key_up(&mut self, key: Key) {
+            trace!("Key up: {key:?}");
             self.key_state[key as usize].current = false;
         }
 
         pub(crate) fn on_key_down(&mut self, key: Key) {
+            trace!("Key down: {key:?}");
             self.key_state[key as usize].current = true;
         }
     }
