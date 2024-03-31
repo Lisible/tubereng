@@ -123,21 +123,9 @@ mod tests {
         let mut ecs = Ecs::new();
         ecs.run_single_run_system(
             &(|command_queue: &CommandQueue| {
-                command_queue.push_command(InsertEntity::new((
-                    Player,
-                    Health(10),
-                    Position { x: 3, y: 5 },
-                )));
-                command_queue.push_command(InsertEntity::new((
-                    Enemy,
-                    Health(5),
-                    Position { x: 5, y: 9 },
-                )));
-                command_queue.push_command(InsertEntity::new((
-                    Enemy,
-                    Health(2),
-                    Position { x: 7, y: 12 },
-                )));
+                command_queue.insert((Player, Health(10), Position { x: 3, y: 5 }));
+                command_queue.insert((Enemy, Health(5), Position { x: 5, y: 9 }));
+                command_queue.insert((Enemy, Health(2), Position { x: 7, y: 12 }));
             })
             .into_system(),
         );

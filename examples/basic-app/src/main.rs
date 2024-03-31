@@ -18,9 +18,10 @@ fn main() -> Result<(), WinitError> {
     let engine = Engine::builder()
         .with_application_title("basic-app")
         .with_init_system(|queue: &CommandQueue| {
-            queue.push_command(InsertEntity::new((Player, Position(23, 15))));
-            queue.push_command(InsertEntity::new((Enemy, Position(2, 5))));
-            queue.push_command(InsertEntity::new((Enemy, Position(3, 1))));
+            queue.insert((Player, Position(23, 15)));
+            queue.insert((Enemy, Position(2, 5)));
+            queue.insert((Enemy, Position(3, 1)));
+            queue.register_system(|| println!("Some system"));
         })
         .build();
     WinitTuberRunner::run(engine)

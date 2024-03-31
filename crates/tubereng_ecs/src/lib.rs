@@ -90,6 +90,18 @@ impl Ecs {
         }
     }
 
+    pub fn register_system<F, A>(&mut self, system: F)
+    where
+        F: system::Into<A>,
+    {
+        self.insert_system(system.into_system());
+    }
+
+    fn insert_system(&mut self, system: system::System) {
+        trace!("Registering system @{:?}", std::ptr::addr_of!(system));
+        self.systems.push(system);
+    }
+
     fn process_command_queue(&mut self) {
         let mut command_queue = CommandQueue::new();
         std::mem::swap(&mut self.command_queue, &mut command_queue);
