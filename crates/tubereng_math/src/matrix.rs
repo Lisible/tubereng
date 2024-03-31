@@ -247,14 +247,8 @@ where
     T: Copy + Zero + Add<Output = T> + Mul<Output = T>,
 {
     fn mul_assign(&mut self, rhs: Self) {
-        for j in 0..4 {
-            for i in 0..4 {
-                self.values[j * Self::COLS + i] = self.values[j * Self::COLS] * rhs.values[i]
-                    + self.values[j * Self::COLS + 1] * rhs.values[i + Self::COLS]
-                    + self.values[j * Self::COLS + 2] * rhs.values[i + Self::COLS * 2]
-                    + self.values[j * Self::COLS + 3] * rhs.values[i + Self::COLS * 3];
-            }
-        }
+        let a = *self * rhs;
+        self.values = a.values;
     }
 }
 
@@ -327,6 +321,8 @@ impl<T> Identity for Matrix4<T>
 
 #[cfg(test)]
 mod tests {
+    use assert_float_eq::*;
+
     use super::*;
 
     #[test]

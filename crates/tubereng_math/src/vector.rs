@@ -215,6 +215,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use assert_float_eq::*;
 
     #[test]
     fn vector3_new() {

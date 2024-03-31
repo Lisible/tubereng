@@ -208,7 +208,7 @@ where
 mod tests {
     use std::f32::consts::PI;
 
-    use assert_float_eq::assert_float_absolute_eq;
+    use assert_float_eq::*;
 
     use crate::vector::Vector3f;
 
