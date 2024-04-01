@@ -6,6 +6,8 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-winit = { version = "0.29", default-features = false, features = ["x11"] }
 tubereng_engine = { path = "../tubereng_engine" }
 tubereng_input = { path = "../tubereng_input" }
+winit = { version = "0.29", default-features = false, features = ["x11", "rwh_06"] }
+raw-window-handle = "0.6"
+

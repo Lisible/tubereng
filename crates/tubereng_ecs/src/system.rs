@@ -1,6 +1,6 @@
 use std::any::TypeId;
 use std::cell::{Ref, RefMut};
-use std::ops::Deref;
+use std::ops::{Deref, DerefMut};
 
 use crate::commands::CommandQueue;
 use crate::{ComponentStores, Resources};
@@ -136,6 +136,11 @@ impl<'a, T> Deref for ResMut<'a, T> {
 
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+impl<'a, T> DerefMut for ResMut<'a, T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
     }
 }
 

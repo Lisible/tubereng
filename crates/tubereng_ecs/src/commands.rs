@@ -1,4 +1,4 @@
-use std::{cell::RefCell, vec::IntoIter};
+use std::{any::Any, cell::RefCell, vec::IntoIter};
 
 use crate::{
     system::{self, System},
@@ -17,6 +17,13 @@ impl CommandQueue {
         ED: 'static + EntityDefinition,
     {
         self.push_command(InsertEntity::new(entity_definition));
+    }
+
+    pub fn insert_resource<R>(&self, resource: R)
+    where
+        R: 'static,
+    {
+        self.push_command(InsertResource::new(resource));
     }
 
     pub fn register_system<F, A>(&self, system: F)
@@ -56,6 +63,44 @@ pub trait Command {
 pub struct InsertEntity {
     entity_definition: Option<Box<dyn EntityDefinition>>,
 }
+impl InsertEntity {
+    pub fn new<ED>(entity_definition: ED) -> Self
+    where
+        ED: 'static + EntityDefinition,
+    {
+        Self {
+            entity_definition: Some(Box::new(entity_definition)),
+        }
+    }
+}
+
+impl Command for InsertEntity {
+    fn apply(&mut self, ecs: &mut Ecs) {
+        let boxed_ed = self.entity_definition.take().unwrap();
+        ecs.insert(boxed_ed);
+    }
+}
+
+pub struct InsertResource {
+    resource: Option<Box<dyn Any>>,
+}
+
+impl InsertResource {
+    pub fn new<R>(resource: R) -> Self
+    where
+        R: 'static,
+    {
+        Self {
+            resource: Some(Box::new(resource)),
+        }
+    }
+}
+
+impl Command for InsertResource {
+    fn apply(&mut self, ecs: &mut Ecs) {
+        ecs.insert_resource(self.resource.take().unwrap());
+    }
+}
 
 pub struct RegisterSystem {
     system: Option<System>,
@@ -75,23 +120,5 @@ impl RegisterSystem {
 impl Command for RegisterSystem {
     fn apply(&mut self, ecs: &mut Ecs) {
         ecs.insert_system(self.system.take().unwrap());
-    }
-}
-
-impl InsertEntity {
-    pub fn new<ED>(entity_definition: ED) -> Self
-    where
-        ED: 'static + EntityDefinition,
-    {
-        Self {
-            entity_definition: Some(Box::new(entity_definition)),
-        }
-    }
-}
-
-impl Command for InsertEntity {
-    fn apply(&mut self, ecs: &mut Ecs) {
-        let boxed_ed = self.entity_definition.take().unwrap();
-        ecs.insert(boxed_ed);
     }
 }

@@ -67,6 +67,10 @@ impl Ecs {
             .insert(TypeId::of::<R>(), RefCell::new(Box::new(resource)));
     }
 
+    pub fn command_queue(&self) -> &CommandQueue {
+        &self.command_queue
+    }
+
     /// Retrieves a ``Ref`` to a stored resource or None if its not found
     ///
     /// # Panics

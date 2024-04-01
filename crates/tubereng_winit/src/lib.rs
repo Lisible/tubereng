@@ -1,5 +1,7 @@
 #![warn(clippy::pedantic)]
 
+use std::sync::Arc;
+
 use tubereng_engine::Engine;
 use tubereng_input::{keyboard::Key, Input};
 use winit::{
@@ -16,6 +18,7 @@ pub enum WinitError {
     EventLoopCreationFailed(EventLoopError),
     EventLoopRunningFailed(EventLoopError),
     WindowCreationFailed(OsError),
+    WindowHandleFetchingFailed(raw_window_handle::HandleError),
 }
 
 pub struct WinitTuberRunner;
@@ -28,12 +31,15 @@ impl WinitTuberRunner {
     /// the window cannot be created.
     pub fn run(mut engine: Engine) -> Result<(), WinitError> {
         let event_loop = EventLoop::new().map_err(WinitError::EventLoopCreationFailed)?;
-        let window = WindowBuilder::new()
-            .with_title(engine.application_title())
-            .with_resizable(false)
-            .with_inner_size(PhysicalSize::new(800, 600))
-            .build(&event_loop)
-            .map_err(WinitError::WindowCreationFailed)?;
+        let window = Arc::new(
+            WindowBuilder::new()
+                .with_title(engine.application_title())
+                .with_resizable(false)
+                .with_inner_size(PhysicalSize::new(800, 600))
+                .build(&event_loop)
+                .map_err(WinitError::WindowCreationFailed)?,
+        );
+        engine.init_graphics(window.clone());
         event_loop.set_control_flow(ControlFlow::Poll);
         event_loop
             .run(move |event, elwt| match event {
@@ -45,13 +51,6 @@ impl WinitTuberRunner {
                 }
                 Event::AboutToWait => {
                     engine.update();
-                    window.request_redraw();
-                }
-                Event::WindowEvent {
-                    event: WindowEvent::RedrawRequested,
-                    ..
-                } => {
-                    engine.render();
                 }
                 Event::DeviceEvent {
                     event: DeviceEvent::MouseMotion { delta },
