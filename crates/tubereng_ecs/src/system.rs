@@ -1,9 +1,87 @@
 use std::any::TypeId;
 use std::cell::{Ref, RefMut};
+use std::collections::hash_map::Entry;
+use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
 
 use crate::commands::CommandQueue;
 use crate::{ComponentStores, Resources};
+
+pub mod stages {
+    pub struct Update;
+    pub struct Render;
+}
+
+pub struct Schedule {
+    stages: Vec<TypeId>,
+    stages_systems: HashMap<TypeId, Vec<System>>,
+}
+
+impl Schedule {
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            stages: vec![],
+            stages_systems: HashMap::new(),
+        }
+    }
+
+    /// Run the systems registered in the schedule
+    ///
+    /// # Panics
+    ///
+    /// Will panic if the systems of a stage cannot be found
+    pub fn run_systems(
+        &mut self,
+        component_stores: &mut ComponentStores,
+        resources: &mut Resources,
+        command_queue: &mut CommandQueue,
+    ) {
+        for stage in &self.stages {
+            let systems = self.stages_systems.get_mut(stage).unwrap();
+            for system in systems.iter_mut() {
+                system.run(component_stores, resources, command_queue);
+            }
+        }
+    }
+
+    pub fn add_stage<S>(&mut self)
+    where
+        S: 'static,
+    {
+        let stage_id = TypeId::of::<S>();
+        self.stages.push(stage_id);
+        self.stages_systems.insert(stage_id, vec![]);
+    }
+
+    /// Registers a system to the schedule for a given stage.
+    /// If the stage doesn't exist, it is created and will run
+    /// after the already registered stages.
+    pub fn register_system_for_stage<S>(&mut self, system: System)
+    where
+        S: 'static,
+    {
+        let stage_id = TypeId::of::<S>();
+        if let Entry::Vacant(entry) = self.stages_systems.entry(stage_id) {
+            entry.insert(vec![]);
+            self.stages.push(stage_id);
+        }
+
+        // SAFETY: If the entry was vacant we created it, so it must be here
+        unsafe {
+            self.stages_systems
+                .get_mut(&TypeId::of::<S>())
+                .unwrap_unchecked()
+                .push(system);
+        }
+    }
+}
+
+impl Default for Schedule {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 type SystemFn = Box<dyn Fn(&mut CommandQueue, &Resources)>;
 

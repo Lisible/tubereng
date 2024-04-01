@@ -28,9 +28,10 @@ impl Engine {
     {
         self.ecs.insert_resource(GraphicsState::new(window));
         self.ecs
-            .register_system(tubereng_graphics::update_clear_color);
-        self.ecs
-            .register_system(tubereng_graphics::render_frame_system);
+            .register_system::<system::stages::Update, _, _>(tubereng_graphics::update_clear_color);
+        self.ecs.register_system::<system::stages::Render, _, _>(
+            tubereng_graphics::render_frame_system,
+        );
     }
 
     pub fn update(&mut self) {

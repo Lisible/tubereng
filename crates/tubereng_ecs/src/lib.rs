@@ -27,7 +27,7 @@ pub struct Ecs {
     component_stores: ComponentStores,
     resources: Resources,
     command_queue: CommandQueue,
-    systems: Vec<system::System>,
+    system_schedule: system::Schedule,
 }
 
 impl Ecs {
@@ -38,7 +38,7 @@ impl Ecs {
             component_stores: ComponentStores::new(),
             resources: Resources::new(),
             command_queue: CommandQueue::new(),
-            systems: vec![],
+            system_schedule: system::Schedule::new(),
         }
     }
 
@@ -134,25 +134,27 @@ impl Ecs {
     }
 
     pub fn run_systems(&mut self) {
-        for system in &self.systems {
-            system.run(
-                &mut self.component_stores,
-                &mut self.resources,
-                &mut self.command_queue,
-            );
-        }
+        self.system_schedule.run_systems(
+            &mut self.component_stores,
+            &mut self.resources,
+            &mut self.command_queue,
+        );
     }
 
-    pub fn register_system<F, A>(&mut self, system: F)
+    pub fn register_system<S, F, A>(&mut self, system: F)
     where
+        S: 'static,
         F: system::Into<A>,
     {
-        self.insert_system(system.into_system());
+        self.insert_system::<S>(system.into_system());
     }
 
-    fn insert_system(&mut self, system: system::System) {
+    fn insert_system<S>(&mut self, system: system::System)
+    where
+        S: 'static,
+    {
         trace!("Registering system @{:?}", std::ptr::addr_of!(system));
-        self.systems.push(system);
+        self.system_schedule.register_system_for_stage::<S>(system);
     }
 
     fn process_command_queue(&mut self) {

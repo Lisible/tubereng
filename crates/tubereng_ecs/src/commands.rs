@@ -1,4 +1,4 @@
-use std::{any::Any, cell::RefCell, vec::IntoIter};
+use std::{any::Any, cell::RefCell, marker::PhantomData, vec::IntoIter};
 
 use crate::{
     system::{self, System},
@@ -26,11 +26,12 @@ impl CommandQueue {
         self.push_command(InsertResource::new(resource));
     }
 
-    pub fn register_system<F, A>(&self, system: F)
+    pub fn register_system<S, F, A>(&self, system: F)
     where
+        S: 'static,
         F: system::Into<A>,
     {
-        self.push_command(RegisterSystem::new(system));
+        self.push_command(RegisterSystem::<S>::new::<S, _, _>(system));
     }
 
     fn push_command<C>(&self, command: C)
@@ -102,23 +103,28 @@ impl Command for InsertResource {
     }
 }
 
-pub struct RegisterSystem {
+pub struct RegisterSystem<S> {
     system: Option<System>,
+    _marker: PhantomData<S>,
 }
 
-impl RegisterSystem {
-    pub fn new<F, A>(system: F) -> Self
+impl<S> RegisterSystem<S> {
+    pub fn new<SS, F, A>(system: F) -> RegisterSystem<SS>
     where
         F: system::Into<A>,
     {
-        Self {
+        RegisterSystem {
             system: Some(system.into_system()),
+            _marker: PhantomData,
         }
     }
 }
 
-impl Command for RegisterSystem {
+impl<S> Command for RegisterSystem<S>
+where
+    S: 'static,
+{
     fn apply(&mut self, ecs: &mut Ecs) {
-        ecs.insert_system(self.system.take().unwrap());
+        ecs.insert_system::<S>(self.system.take().unwrap());
     }
 }
