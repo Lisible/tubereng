@@ -1,5 +1,5 @@
 [package]
-name = "tubereng_graphics"
+name = "tubereng_renderer"
 version = "0.1.0"
 edition = "2021"
 

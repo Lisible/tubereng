@@ -3,8 +3,8 @@
 use std::sync::Arc;
 
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
-use tubereng_graphics::GraphicsState;
 use tubereng_input::{Input, InputState};
+use tubereng_renderer::GraphicsState;
 
 use tubereng_ecs::{
     system::{self},
@@ -28,9 +28,9 @@ impl Engine {
     {
         self.ecs.insert_resource(GraphicsState::new(window));
         self.ecs
-            .register_system::<system::stages::Update, _, _>(tubereng_graphics::update_clear_color);
+            .register_system::<system::stages::Update, _, _>(tubereng_renderer::update_clear_color);
         self.ecs.register_system::<system::stages::Render, _, _>(
-            tubereng_graphics::render_frame_system,
+            tubereng_renderer::render_frame_system,
         );
     }
 
