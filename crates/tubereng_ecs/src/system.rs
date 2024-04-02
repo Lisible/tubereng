@@ -2,10 +2,11 @@ use std::any::TypeId;
 use std::cell::{Ref, RefMut};
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 
 use crate::commands::CommandQueue;
-use crate::{ComponentStores, Resources};
+use crate::{query, ComponentStores, Resources};
 
 pub mod stages {
     pub struct Update;
@@ -36,11 +37,12 @@ impl Schedule {
         component_stores: &mut ComponentStores,
         resources: &mut Resources,
         command_queue: &mut CommandQueue,
+        entity_count: usize,
     ) {
         for stage in &self.stages {
             let systems = self.stages_systems.get_mut(stage).unwrap();
             for system in systems.iter_mut() {
-                system.run(component_stores, resources, command_queue);
+                system.run(component_stores, resources, command_queue, entity_count);
             }
         }
     }
@@ -83,7 +85,7 @@ impl Default for Schedule {
     }
 }
 
-type SystemFn = Box<dyn Fn(&mut CommandQueue, &Resources)>;
+type SystemFn = Box<dyn Fn(&mut CommandQueue, &Resources, &ComponentStores, usize)>;
 
 pub struct System {
     system_fn: SystemFn,
@@ -92,11 +94,12 @@ pub struct System {
 impl System {
     pub fn run(
         &self,
-        _component_stores: &mut ComponentStores,
+        component_stores: &mut ComponentStores,
         resources: &mut Resources,
         command_queue: &mut CommandQueue,
+        entity_count: usize,
     ) {
-        (self.system_fn)(command_queue, resources);
+        (self.system_fn)(command_queue, resources, component_stores, entity_count);
     }
 }
 
@@ -104,7 +107,7 @@ pub struct Noop;
 impl<A> Into<A> for Noop {
     fn into_system(self) -> System {
         System {
-            system_fn: Box::new(|_, _| {}),
+            system_fn: Box::new(|_, _, _, _| {}),
         }
     }
 }
@@ -144,7 +147,7 @@ where
 {
     fn into_system(self) -> System {
         System {
-            system_fn: Box::new(move |_, _| (self)()),
+            system_fn: Box::new(move |_, _, _, _| (self)()),
         }
     }
 }
@@ -159,7 +162,7 @@ macro_rules! impl_into_for_tuples {
         {
             fn into_system(self) -> System {
                 System {
-                    system_fn: Box::new(move |command_queue, resources| (self)($head::provide(command_queue, resources), $($tail::provide(command_queue, resources),)*)),
+                    system_fn: Box::new(move |command_queue, resources, component_stores, entity_count| (self)($head::provide(command_queue, resources, component_stores, entity_count), $($tail::provide(command_queue, resources, component_stores, entity_count),)*)),
                 }
             }
         }
@@ -173,18 +176,79 @@ impl_into_for_tuples!(F, E, D, C, B, A,);
 
 pub trait Argument {
     type Type<'a>;
-    fn provide<'a>(command_queue: &'a CommandQueue, resources: &'a Resources) -> Self::Type<'a>;
+    fn provide<'a>(
+        command_queue: &'a CommandQueue,
+        resources: &'a Resources,
+        component_stores: &'a ComponentStores,
+        entity_count: usize,
+    ) -> Self::Type<'a>;
 }
 
 impl Argument for () {
     type Type<'a> = ();
 
-    fn provide<'a>(_command_queue: &'a CommandQueue, _resources: &'a Resources) -> Self::Type<'a> {}
+    fn provide<'a>(
+        _command_queue: &'a CommandQueue,
+        _resources: &'a Resources,
+        _component_stores: &'a ComponentStores,
+        _entity_count: usize,
+    ) -> Self::Type<'a> {
+    }
+}
+
+pub struct Q<'ecs, QD>
+where
+    QD: query::Definition,
+{
+    state: query::State<'ecs, QD>,
+    _marker: PhantomData<QD>,
+}
+
+impl<'ecs, QD> Q<'ecs, QD>
+where
+    QD: query::Definition,
+{
+    #[must_use]
+    pub fn new(component_stores: &'ecs ComponentStores, entity_count: usize) -> Self {
+        let state = query::State::new(component_stores, entity_count);
+        Self {
+            state,
+            _marker: PhantomData,
+        }
+    }
+
+    pub fn first(&mut self) -> Option<QD::Item<'_>> {
+        self.state.iter().next()
+    }
+    pub fn iter<'a>(&'a mut self) -> query::Iter<'ecs, 'a, QD> {
+        self.state.iter()
+    }
+}
+
+impl<'ecs, QD> Argument for Q<'ecs, QD>
+where
+    QD: query::Definition,
+{
+    type Type<'a> = Q<'a, QD>;
+
+    fn provide<'a>(
+        _command_queue: &'a CommandQueue,
+        _resources: &'a Resources,
+        component_stores: &'a ComponentStores,
+        entity_count: usize,
+    ) -> Self::Type<'a> {
+        Q::new(component_stores, entity_count)
+    }
 }
 
 impl Argument for &CommandQueue {
     type Type<'a> = &'a CommandQueue;
-    fn provide<'a>(command_queue: &'a CommandQueue, _resources: &'a Resources) -> Self::Type<'a> {
+    fn provide<'a>(
+        command_queue: &'a CommandQueue,
+        _resources: &'a Resources,
+        _component_stores: &'a ComponentStores,
+        _entity_count: usize,
+    ) -> Self::Type<'a> {
         command_queue
     }
 }
@@ -201,7 +265,12 @@ impl<'a, T> Deref for Res<'a, T> {
 impl<T: 'static> Argument for Res<'_, T> {
     type Type<'a> = Res<'a, T>;
 
-    fn provide<'a>(_command_queue: &'a CommandQueue, resources: &'a Resources) -> Self::Type<'a> {
+    fn provide<'a>(
+        _command_queue: &'a CommandQueue,
+        resources: &'a Resources,
+        _component_stores: &'a ComponentStores,
+        _entity_count: usize,
+    ) -> Self::Type<'a> {
         Res(Ref::map(
             resources.get(&TypeId::of::<T>()).as_ref().unwrap().borrow(),
             |r| r.downcast_ref::<T>().unwrap(),
@@ -225,7 +294,12 @@ impl<'a, T> DerefMut for ResMut<'a, T> {
 impl<T: 'static> Argument for ResMut<'_, T> {
     type Type<'a> = ResMut<'a, T>;
 
-    fn provide<'a>(_command_queue: &'a CommandQueue, resources: &'a Resources) -> Self::Type<'a> {
+    fn provide<'a>(
+        _command_queue: &'a CommandQueue,
+        resources: &'a Resources,
+        _component_stores: &'a ComponentStores,
+        _entity_count: usize,
+    ) -> Self::Type<'a> {
         ResMut(RefMut::map(
             resources
                 .get(&TypeId::of::<T>())

@@ -1,6 +1,6 @@
 use std::{any::TypeId, cell::RefCell, collections::HashSet, marker::PhantomData};
 
-use crate::Ecs;
+use crate::ComponentStores;
 
 pub struct ComponentAccesses {
     // TODO: Consider using bitsets instead of HashSet, but we would need to
@@ -25,39 +25,34 @@ impl ComponentAccesses {
     }
 }
 
-pub struct State<QD>
+pub struct State<'w, QD>
 where
     QD: Definition,
 {
+    component_stores: &'w ComponentStores,
+    entity_count: usize,
     _accesses: ComponentAccesses,
     _marker: PhantomData<QD>,
 }
 
-impl<QD> State<QD>
+impl<'w, QD> State<'w, QD>
 where
     QD: Definition,
 {
     #[must_use]
-    pub fn new() -> Self {
+    pub fn new(component_stores: &'w ComponentStores, entity_count: usize) -> Self {
         let accesses = ComponentAccesses::new();
         QD::register_component_accesses(&accesses);
         Self {
+            component_stores,
+            entity_count,
             _accesses: accesses,
             _marker: PhantomData,
         }
     }
 
-    pub fn iter<'s, 'w>(&'s mut self, ecs: &'w Ecs) -> Iter<'w, 's, QD> {
-        Iter::new(self, ecs)
-    }
-}
-
-impl<QD> Default for State<QD>
-where
-    QD: Definition,
-{
-    fn default() -> Self {
-        Self::new()
+    pub fn iter<'s>(&'s mut self) -> Iter<'w, 's, QD> {
+        Iter::new(self, self.entity_count, self.component_stores)
     }
 }
 
@@ -65,8 +60,9 @@ pub struct Iter<'w, 's, QD>
 where
     QD: Definition,
 {
-    _query_state: &'s State<QD>,
-    ecs: &'w Ecs,
+    _query_state: &'s State<'w, QD>,
+    entity_count: usize,
+    component_stores: &'w ComponentStores,
     current_entity_index: usize,
 }
 
@@ -75,10 +71,15 @@ where
     QD: Definition,
 {
     #[must_use]
-    pub fn new(query_state: &'s State<QD>, ecs: &'w Ecs) -> Self {
+    pub fn new(
+        query_state: &'s State<'w, QD>,
+        entity_count: usize,
+        component_stores: &'w ComponentStores,
+    ) -> Self {
         Self {
             _query_state: query_state,
-            ecs,
+            entity_count,
+            component_stores,
             current_entity_index: 0,
         }
     }
@@ -91,18 +92,18 @@ where
     type Item = QD::Item<'w>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.current_entity_index >= self.ecs.entity_count() {
+        if self.current_entity_index >= self.entity_count {
             return None;
         }
 
-        let mut fetched = QD::fetch(self.ecs, self.current_entity_index);
+        let mut fetched = QD::fetch(self.component_stores, self.current_entity_index);
         while fetched.is_none() {
             self.current_entity_index += 1;
-            if self.current_entity_index >= self.ecs.entity_count() {
+            if self.current_entity_index >= self.entity_count {
                 return None;
             }
 
-            fetched = QD::fetch(self.ecs, self.current_entity_index);
+            fetched = QD::fetch(self.component_stores, self.current_entity_index);
         }
 
         self.current_entity_index += 1;
@@ -114,7 +115,7 @@ pub trait Definition {
     type Item<'a>;
     fn register_component_accesses(accesses: &ComponentAccesses);
 
-    fn fetch(ecs: &Ecs, entity_id: usize) -> Option<Self::Item<'_>>
+    fn fetch(component_stores: &ComponentStores, entity_id: usize) -> Option<Self::Item<'_>>
     where
         Self: Sized;
 }
@@ -127,8 +128,11 @@ impl<A: Definition, B: Definition> Definition for (A, B) {
         B::register_component_accesses(accesses);
     }
 
-    fn fetch(ecs: &Ecs, entity_id: usize) -> Option<Self::Item<'_>> {
-        Some((A::fetch(ecs, entity_id)?, B::fetch(ecs, entity_id)?))
+    fn fetch(component_stores: &ComponentStores, entity_id: usize) -> Option<Self::Item<'_>> {
+        Some((
+            A::fetch(component_stores, entity_id)?,
+            B::fetch(component_stores, entity_id)?,
+        ))
     }
 }
 
@@ -143,8 +147,8 @@ impl<T: 'static> Definition for &T {
 
         accesses.read.borrow_mut().insert(component_type_id);
     }
-    fn fetch(ecs: &Ecs, entity_id: usize) -> Option<Self::Item<'_>> {
-        ecs.component::<T>(entity_id)
+    fn fetch(component_stores: &ComponentStores, entity_id: usize) -> Option<Self::Item<'_>> {
+        component_stores.get(&TypeId::of::<T>())?.get(entity_id)
     }
 }
 
@@ -163,7 +167,7 @@ impl<T: 'static> Definition for &mut T {
 
         accesses.write.borrow_mut().insert(component_type_id);
     }
-    fn fetch(ecs: &Ecs, entity_id: usize) -> Option<Self::Item<'_>> {
-        ecs.component_mut::<T>(entity_id)
+    fn fetch(component_stores: &ComponentStores, entity_id: usize) -> Option<Self::Item<'_>> {
+        component_stores.get(&TypeId::of::<T>())?.get_mut(entity_id)
     }
 }

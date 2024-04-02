@@ -121,23 +121,27 @@ impl Ecs {
     where
         QD: query::Definition,
     {
-        query::State::new()
+        query::State::new(&self.component_stores, self.entity_count())
     }
 
     pub fn run_single_run_system(&mut self, system: &system::System) {
+        let entity_count = self.entity_count();
         system.run(
             &mut self.component_stores,
             &mut self.resources,
             &mut self.command_queue,
+            entity_count,
         );
         self.process_command_queue();
     }
 
     pub fn run_systems(&mut self) {
+        let entity_count = self.entity_count();
         self.system_schedule.run_systems(
             &mut self.component_stores,
             &mut self.resources,
             &mut self.command_queue,
+            entity_count,
         );
     }
 
@@ -329,7 +333,7 @@ mod tests {
         let _ = ecs.insert((Enemy, Health(2), Position { x: 7, y: 12 }));
 
         let mut health_query = ecs.query::<&Health>();
-        let mut health_query_iter = health_query.iter(&ecs);
+        let mut health_query_iter = health_query.iter();
         assert_eq!(health_query_iter.next(), Some(&Health(10)));
         assert_eq!(health_query_iter.next(), Some(&Health(5)));
         assert_eq!(health_query_iter.next(), Some(&Health(2)));
@@ -342,7 +346,7 @@ mod tests {
         let _ = ecs.insert((Enemy, Health(5), Position { x: 5, y: 9 }));
         let _ = ecs.insert((Enemy, Health(2), Position { x: 7, y: 12 }));
         let mut health_pos_query = ecs.query::<(&Health, &Position)>();
-        let mut health_pos_query_iter = health_pos_query.iter(&ecs);
+        let mut health_pos_query_iter = health_pos_query.iter();
         assert_eq!(
             health_pos_query_iter.next(),
             Some((&Health(10), &Position { x: 3, y: 5 }))
@@ -364,7 +368,7 @@ mod tests {
         let first_enemy = ecs.insert((Enemy, Health(5), Position { x: 5, y: 9 }));
         let second_enemy = ecs.insert((Enemy, Health(2), Position { x: 7, y: 12 }));
 
-        for (_, enemy_health) in ecs.query::<(&Enemy, &mut Health)>().iter(&ecs) {
+        for (_, enemy_health) in ecs.query::<(&Enemy, &mut Health)>().iter() {
             let Health(enemy_health) = enemy_health;
             *enemy_health -= 1;
         }
