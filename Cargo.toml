@@ -20,4 +20,5 @@ tubereng_ecs = { path = "crates/tubereng_ecs" }
 tubereng_math = { path = "crates/tubereng_math" }
 tubereng_input = { path = "crates/tubereng_input" }
 tubereng_renderer = { path = "crates/tubereng_renderer" }
+tubereng_gui = { path = "crates/tubereng_gui" }
 tubereng_engine = { path = "crates/tubereng_engine" }

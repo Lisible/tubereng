@@ -27,6 +27,7 @@ impl Engine {
         W: HasWindowHandle + HasDisplayHandle + std::marker::Send + std::marker::Sync,
     {
         self.ecs.insert_resource(GraphicsState::new(window).await);
+        self.ecs.insert_resource(tubereng_gui::Context);
         self.ecs
             .register_system::<system::stages::Update, _, _>(tubereng_renderer::update_clear_color);
         self.ecs.register_system::<system::stages::Render, _, _>(
