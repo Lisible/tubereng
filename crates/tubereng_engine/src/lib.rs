@@ -22,11 +22,11 @@ impl Engine {
         EngineBuilder::new()
     }
 
-    pub fn init_graphics<W>(&mut self, window: Arc<W>)
+    pub async fn init_graphics<W>(&mut self, window: Arc<W>)
     where
         W: HasWindowHandle + HasDisplayHandle + std::marker::Send + std::marker::Sync,
     {
-        self.ecs.insert_resource(GraphicsState::new(window));
+        self.ecs.insert_resource(GraphicsState::new(window).await);
         self.ecs
             .register_system::<system::stages::Update, _, _>(tubereng_renderer::update_clear_color);
         self.ecs.register_system::<system::stages::Render, _, _>(

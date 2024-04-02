@@ -29,7 +29,7 @@ impl<'w> GraphicsState<'w> {
     ///  - No adapter is found
     ///  - The device cannot be set up
     ///  - The handle of the window cannot be obtained
-    pub fn new<W>(window: W) -> Self
+    pub async fn new<W>(window: W) -> Self
     where
         W: HasWindowHandle + HasDisplayHandle + std::marker::Send + std::marker::Sync,
     {
@@ -38,44 +38,58 @@ impl<'w> GraphicsState<'w> {
             height: 600,
         };
 
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::all(),
+        let mut instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            backends: wgpu::Backends::PRIMARY,
             ..Default::default()
         });
 
-        let surface = unsafe {
-            instance
-                .create_surface_unsafe(
+        let mut surface = unsafe {
+            instance.create_surface_unsafe(
+                SurfaceTargetUnsafe::from_window(&window)
+                    .expect("Couldn't create SurfaceTargetUnsafe"),
+            )
+        };
+
+        if surface.is_err() {
+            instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+                backends: wgpu::Backends::GL,
+                ..Default::default()
+            });
+
+            surface = unsafe {
+                instance.create_surface_unsafe(
                     SurfaceTargetUnsafe::from_window(&window)
                         .expect("Couldn't create SurfaceTargetUnsafe"),
                 )
-                .expect("Couldn't create surface")
-        };
+            };
+        }
 
-        let adapter = pollster::block_on(async {
-            instance
-                .request_adapter(&wgpu::RequestAdapterOptions {
-                    power_preference: wgpu::PowerPreference::default(),
-                    compatible_surface: Some(&surface),
-                    force_fallback_adapter: false,
-                })
-                .await
-                .expect("No adapter found")
-        });
+        let surface = surface.unwrap();
 
-        let (device, queue) = pollster::block_on(async {
-            adapter
-                .request_device(
-                    &wgpu::DeviceDescriptor {
-                        required_features: wgpu::Features::empty(),
-                        required_limits: wgpu::Limits::default(),
-                        label: None,
+        let adapter = instance
+            .request_adapter(&wgpu::RequestAdapterOptions {
+                power_preference: wgpu::PowerPreference::default(),
+                compatible_surface: Some(&surface),
+                force_fallback_adapter: false,
+            })
+            .await
+            .expect("No adapter found");
+
+        let (device, queue) = adapter
+            .request_device(
+                &wgpu::DeviceDescriptor {
+                    required_features: wgpu::Features::empty(),
+                    required_limits: if cfg!(target_arch = "wasm32") {
+                        wgpu::Limits::downlevel_webgl2_defaults()
+                    } else {
+                        wgpu::Limits::default()
                     },
-                    None,
-                )
-                .await
-                .expect("Couldn't setup device")
-        });
+                    label: None,
+                },
+                None,
+            )
+            .await
+            .expect("Couldn't setup device");
         let surface_capabilities = surface.get_capabilities(&adapter);
         let surface_format = surface_capabilities
             .formats

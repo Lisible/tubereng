@@ -29,7 +29,7 @@ impl WinitTuberRunner {
     ///
     /// Will return [`Err`] if the event loop cannot be created or run, or if
     /// the window cannot be created.
-    pub fn run(mut engine: Engine) -> Result<(), WinitError> {
+    pub async fn run(mut engine: Engine) -> Result<(), WinitError> {
         let event_loop = EventLoop::new().map_err(WinitError::EventLoopCreationFailed)?;
         let window = Arc::new(
             WindowBuilder::new()
@@ -39,7 +39,22 @@ impl WinitTuberRunner {
                 .build(&event_loop)
                 .map_err(WinitError::WindowCreationFailed)?,
         );
-        engine.init_graphics(window.clone());
+        #[cfg(target_arch = "wasm32")]
+        {
+            let _ = window.request_inner_size(PhysicalSize::new(800, 600));
+
+            use winit::platform::web::WindowExtWebSys;
+            web_sys::window()
+                .and_then(|win| win.document())
+                .and_then(|doc| {
+                    let dst = doc.get_element_by_id(engine.application_title())?;
+                    let canvas = web_sys::Element::from(window.canvas()?);
+                    dst.append_child(&canvas).ok()?;
+                    Some(())
+                })
+                .expect("Couldn't append canvas to document body.");
+        }
+        engine.init_graphics(window.clone()).await;
         event_loop.set_control_flow(ControlFlow::Poll);
         event_loop
             .run(move |event, elwt| match event {

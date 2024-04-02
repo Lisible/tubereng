@@ -7,6 +7,5 @@ edition = "2021"
 
 [dependencies]
 tubereng_ecs = { path = "../tubereng_ecs" }
-wgpu = "0.19"
+wgpu = { version = "0.19", features = ["webgl"] }
 raw-window-handle = "0.6"
-pollster = "0.3"
