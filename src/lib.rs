@@ -1,3 +1,4 @@
+pub use tubereng_asset as asset;
 pub use tubereng_core as core;
 pub use tubereng_ecs as ecs;
 pub use tubereng_engine as engine;
