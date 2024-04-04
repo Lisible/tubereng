@@ -3,11 +3,11 @@
 use std::sync::Arc;
 
 use tubereng_engine::Engine;
-use tubereng_input::{keyboard::Key, Input};
+use tubereng_input::{keyboard::Key, mouse::Button, Input};
 use winit::{
-    dpi::PhysicalSize,
+    dpi::{PhysicalPosition, PhysicalSize},
     error::{EventLoopError, OsError},
-    event::{DeviceEvent, Event, KeyEvent, WindowEvent},
+    event::{DeviceEvent, Event, KeyEvent, MouseButton, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
     keyboard::{KeyCode, PhysicalKey},
     window::WindowBuilder,
@@ -73,6 +73,25 @@ impl WinitTuberRunner {
                 } => engine.on_input(Input::MouseMotion(delta)),
                 Event::WindowEvent {
                     event:
+                        WindowEvent::CursorMoved {
+                            position: PhysicalPosition { x, y },
+                            ..
+                        },
+                    ..
+                } => engine.on_input(Input::CursorMoved((x, y))),
+                Event::WindowEvent {
+                    event: WindowEvent::MouseInput { state, button, .. },
+                    ..
+                } => match state {
+                    winit::event::ElementState::Pressed => {
+                        engine.on_input(Input::MouseButtonDown(WinitButton(button).into()));
+                    }
+                    winit::event::ElementState::Released => {
+                        engine.on_input(Input::MouseButtonUp(WinitButton(button).into()));
+                    }
+                },
+                Event::WindowEvent {
+                    event:
                         WindowEvent::KeyboardInput {
                             event:
                                 KeyEvent {
@@ -97,6 +116,19 @@ impl WinitTuberRunner {
             .map_err(WinitError::EventLoopRunningFailed)?;
 
         Ok(())
+    }
+}
+
+struct WinitButton(MouseButton);
+impl From<WinitButton> for Button {
+    fn from(value: WinitButton) -> Self {
+        let button = value.0;
+        match button {
+            MouseButton::Left => Button::Left,
+            MouseButton::Middle => Button::Middle,
+            MouseButton::Right => Button::Right,
+            _ => Button::Unknown,
+        }
     }
 }
 

@@ -2,9 +2,12 @@
 
 #[derive(Debug, Clone, Copy)]
 pub enum Input {
+    MouseButtonDown(mouse::Button),
+    MouseButtonUp(mouse::Button),
     KeyDown(keyboard::Key),
     KeyUp(keyboard::Key),
     MouseMotion((f64, f64)),
+    CursorMoved((f64, f64)),
 }
 
 pub struct InputState {
@@ -26,11 +29,14 @@ impl InputState {
         self.keyboard.clear_last_frame_inputs();
     }
 
-    pub fn on_input(&mut self, input: Input) {
+    pub fn on_input(&mut self, input: &Input) {
         match input {
-            Input::KeyDown(key) => self.keyboard.on_key_down(key),
-            Input::KeyUp(key) => self.keyboard.on_key_up(key),
-            Input::MouseMotion(motion) => self.mouse.on_motion(motion),
+            Input::MouseButtonDown(button) => self.mouse.on_button_down(*button),
+            Input::MouseButtonUp(button) => self.mouse.on_button_up(*button),
+            Input::KeyDown(key) => self.keyboard.on_key_down(*key),
+            Input::KeyUp(key) => self.keyboard.on_key_up(*key),
+            Input::MouseMotion(motion) => self.mouse.on_motion(*motion),
+            Input::CursorMoved(_) => {}
         }
     }
 }
@@ -42,7 +48,16 @@ impl Default for InputState {
 }
 
 pub mod mouse {
+    use log::trace;
+
+    #[derive(Default, Debug, Clone, Copy)]
+    pub(crate) struct ButtonState {
+        pub current: bool,
+        pub previous: bool,
+    }
+
     pub struct State {
+        pub(super) button_state: [ButtonState; BUTTON_COUNT],
         last_motion: (f64, f64),
     }
 
@@ -50,6 +65,7 @@ pub mod mouse {
         #[must_use]
         pub fn new() -> Self {
             Self {
+                button_state: [ButtonState::default(); BUTTON_COUNT],
                 last_motion: (0.0, 0.0),
             }
         }
@@ -63,8 +79,36 @@ pub mod mouse {
             self.last_motion = motion;
         }
 
+        #[must_use]
+        pub fn is_button_down(&self, button: Button) -> bool {
+            self.button_state[button as usize].current
+        }
+
+        #[must_use]
+        pub fn was_button_down(&self, button: Button) -> bool {
+            self.button_state[button as usize].previous
+        }
+
+        #[must_use]
+        pub fn is_button_up(&self, button: Button) -> bool {
+            !self.button_state[button as usize].current
+        }
+
+        pub(crate) fn on_button_up(&mut self, button: Button) {
+            trace!("Button up: {button:?}");
+            self.button_state[button as usize].current = false;
+        }
+
+        pub(crate) fn on_button_down(&mut self, button: Button) {
+            trace!("Button down: {button:?}");
+            self.button_state[button as usize].current = true;
+        }
+
         pub(crate) fn clear_last_frame_inputs(&mut self) {
             self.last_motion = (0.0, 0.0);
+            for button_state in &mut self.button_state {
+                button_state.previous = button_state.current;
+            }
         }
     }
 
@@ -72,6 +116,15 @@ pub mod mouse {
         fn default() -> Self {
             Self::new()
         }
+    }
+
+    const BUTTON_COUNT: usize = 4;
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum Button {
+        Left = 0,
+        Middle,
+        Right,
+        Unknown,
     }
 }
 
@@ -211,15 +264,15 @@ mod tests {
     fn input_state_on_key_down_changes_key_state() {
         let mut input = InputState::new();
         assert!(input.keyboard.is_key_up(Key::A));
-        input.on_input(Input::KeyDown(Key::A));
+        input.on_input(&Input::KeyDown(Key::A));
         assert!(input.keyboard.is_key_down(Key::A));
     }
     #[test]
     fn input_state_on_key_up_changes_key_state() {
         let mut input = InputState::new();
-        input.on_input(Input::KeyUp(Key::A));
+        input.on_input(&Input::KeyUp(Key::A));
         assert!(input.keyboard.is_key_up(Key::A));
-        input.on_input(Input::KeyDown(Key::A));
+        input.on_input(&Input::KeyDown(Key::A));
         assert!(input.keyboard.is_key_down(Key::A));
     }
 }

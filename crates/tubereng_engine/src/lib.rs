@@ -49,7 +49,7 @@ impl Engine {
             .ecs
             .resource_mut::<InputState>()
             .expect("InputState should be present in the engine's resources");
-        input_state.on_input(input);
+        input_state.on_input(&input);
     }
 
     #[must_use]
