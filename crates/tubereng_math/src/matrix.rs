@@ -49,9 +49,9 @@ impl<T> Matrix4<T> {
         where U: Copy + Float {
         Matrix4 {
             values: [
-                U::two() / (right - left), U::zero(), U::zero(), -((right + left) / (right - left)),
-                U::zero(), U::two() / (top - bottom), U::zero(), -((top + bottom) / (top - bottom)),
-                U::zero(), U::zero(), -U::two() / (far - near), -((far + near) / (far - near)),
+                U::two() / (right - left), U::zero(), U::zero(), (left + right) / (left - right),
+                U::zero(), U::two() / (top - bottom), U::zero(), (top + bottom) / (bottom - top),
+                U::zero(), U::zero(), U::one() / (far - near),  near / (near - far),
                 U::zero(), U::zero(), U::zero(), U::one()
             ]
         }
