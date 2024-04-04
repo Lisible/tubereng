@@ -21,9 +21,21 @@ pub struct Schedule {
 impl Schedule {
     #[must_use]
     pub fn new() -> Self {
+        let stages = vec![
+            TypeId::of::<stages::Update>(),
+            TypeId::of::<stages::Render>(),
+        ];
+
+        let mut stages_systems = HashMap::new();
+        for stage in &stages {
+            stages_systems
+                .entry(*stage)
+                .or_insert_with(Vec::<System>::new);
+        }
+
         Self {
-            stages: vec![],
-            stages_systems: HashMap::new(),
+            stages,
+            stages_systems,
         }
     }
 

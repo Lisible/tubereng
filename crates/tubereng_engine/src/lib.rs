@@ -27,14 +27,21 @@ impl Engine {
         W: HasWindowHandle + HasDisplayHandle + std::marker::Send + std::marker::Sync,
     {
         self.ecs.insert_resource(GraphicsState::new(window).await);
-        self.ecs.insert_resource(tubereng_gui::Context);
+        self.ecs.insert_resource(tubereng_gui::Context::new());
         self.ecs
             .register_system::<system::stages::Update, _, _>(tubereng_renderer::update_clear_color);
+        self.ecs.register_system::<system::stages::Render, _, _>(
+            tubereng_gui::emit_draw_commands_system,
+        );
+        self.ecs.register_system::<system::stages::Render, _, _>(
+            tubereng_renderer::prepare_frame_system,
+        );
         self.ecs.register_system::<system::stages::Render, _, _>(
             tubereng_renderer::render_frame_system,
         );
     }
 
+    /// Updates the state of the engine
     pub fn update(&mut self) {
         self.ecs.run_systems();
     }
@@ -43,13 +50,21 @@ impl Engine {
     ///
     /// # Panics
     ///
-    /// Will panic if the ``InputState`` is missing from the engine resources
+    /// Will panic if
+    /// - the ``InputState`` is missing from the engine resources
+    /// - the ``gui::Context`` is missing from the engine resources
     pub fn on_input(&mut self, input: Input) {
         let mut input_state = self
             .ecs
             .resource_mut::<InputState>()
             .expect("InputState should be present in the engine's resources");
         input_state.on_input(&input);
+
+        let mut gui_context = self
+            .ecs
+            .resource_mut::<tubereng_gui::Context>()
+            .expect("gui::Context should be present in the engine's resources");
+        gui_context.on_input(&input);
     }
 
     #[must_use]

@@ -1,22 +1,36 @@
 #![warn(clippy::pedantic)]
 
+use std::borrow::BorrowMut;
+
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawWindowHandle};
-use tubereng_ecs::system::{Res, ResMut};
+use tubereng_ecs::system::ResMut;
+use ui_pass::{DrawUiQuadCommand, UiPass};
 use wgpu::SurfaceTargetUnsafe;
 
+mod ui_pass;
 pub struct WindowSize {
     pub width: u32,
     pub height: u32,
 }
 
+enum DrawCommand {
+    DrawUiQuad(DrawUiQuadCommand),
+}
+
+pub struct WgpuState<'w> {
+    surface: wgpu::Surface<'w>,
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    _surface_configuration: wgpu::SurfaceConfiguration,
+    clear_color: wgpu::Color,
+    _window_size: WindowSize,
+    _window: RawWindowHandle,
+}
+
 pub struct GraphicsState<'w> {
-    pub surface: wgpu::Surface<'w>,
-    pub device: wgpu::Device,
-    pub queue: wgpu::Queue,
-    pub surface_configuration: wgpu::SurfaceConfiguration,
-    pub clear_color: wgpu::Color,
-    pub window_size: WindowSize,
-    pub window: RawWindowHandle,
+    pub(crate) wgpu_state: WgpuState<'w>,
+    commands: Vec<DrawCommand>,
+    ui_pass: UiPass,
 }
 
 impl<'w> GraphicsState<'w> {
@@ -111,39 +125,64 @@ impl<'w> GraphicsState<'w> {
         };
         surface.configure(&device, &surface_configuration);
 
+        let ui_pass = UiPass::new(&device, &queue);
+
         GraphicsState {
-            surface,
-            device,
-            queue,
-            surface_configuration,
-            clear_color: wgpu::Color {
-                r: 0.1,
-                g: 0.2,
-                b: 0.3,
-                a: 1.0,
+            wgpu_state: WgpuState {
+                surface,
+                device,
+                queue,
+                _surface_configuration: surface_configuration,
+                clear_color: wgpu::Color {
+                    r: 0.1,
+                    g: 0.2,
+                    b: 0.3,
+                    a: 1.0,
+                },
+                _window_size: window_size,
+                _window: window
+                    .window_handle()
+                    .expect("Couldn't obtain window handle")
+                    .into(),
             },
-            window_size,
-            window: window
-                .window_handle()
-                .expect("Couldn't obtain window handle")
-                .into(),
+            commands: vec![],
+            ui_pass,
         }
+    }
+
+    pub fn draw_ui_quad(&mut self, x: f32, y: f32, width: f32, height: f32) {
+        self.commands
+            .push(DrawCommand::DrawUiQuad(DrawUiQuadCommand {
+                x,
+                y,
+                width,
+                height,
+            }));
     }
 }
 
 pub fn update_clear_color(mut graphics: ResMut<GraphicsState>) {
-    graphics.clear_color.r += 0.0001;
-    if graphics.clear_color.r > 1.0 {
-        graphics.clear_color.r = 0.0;
+    graphics.wgpu_state.clear_color.r += 0.0001;
+    if graphics.wgpu_state.clear_color.r > 1.0 {
+        graphics.wgpu_state.clear_color.r = 0.0;
     }
-    graphics.clear_color.g += 0.0003;
-    if graphics.clear_color.g > 1.0 {
-        graphics.clear_color.g = 0.0;
+    graphics.wgpu_state.clear_color.g += 0.0003;
+    if graphics.wgpu_state.clear_color.g > 1.0 {
+        graphics.wgpu_state.clear_color.g = 0.0;
     }
-    graphics.clear_color.b += 0.0004;
-    if graphics.clear_color.b > 1.0 {
-        graphics.clear_color.b = 0.0;
+    graphics.wgpu_state.clear_color.b += 0.0004;
+    if graphics.wgpu_state.clear_color.b > 1.0 {
+        graphics.wgpu_state.clear_color.b = 0.0;
     }
+}
+
+pub fn prepare_frame_system(mut graphics: ResMut<GraphicsState>) {
+    let graphics = graphics.borrow_mut();
+    let graphics = &mut ***graphics;
+    graphics
+        .ui_pass
+        .prepare(&graphics.wgpu_state, &graphics.commands);
+    graphics.commands.clear();
 }
 
 /// Renders a frame
@@ -151,35 +190,53 @@ pub fn update_clear_color(mut graphics: ResMut<GraphicsState>) {
 /// # Panics
 ///
 /// Panics if the surface texture cannot be obtained
-pub fn render_frame_system(graphics: Res<GraphicsState>) {
-    let surface_texture = graphics.surface.get_current_texture().unwrap();
+pub fn render_frame_system(graphics: ResMut<GraphicsState>) {
+    let surface_texture = graphics.wgpu_state.surface.get_current_texture().unwrap();
     let surface_texture_view = surface_texture
         .texture
         .create_view(&wgpu::TextureViewDescriptor::default());
-    let mut encoder = graphics
-        .device
-        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("encoder"),
-        });
+    let mut encoder =
+        graphics
+            .wgpu_state
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("encoder"),
+            });
 
-    {
-        let _render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("render pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &surface_texture_view,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(graphics.clear_color),
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
-            depth_stencil_attachment: None,
-            timestamp_writes: None,
-            occlusion_query_set: None,
-        });
-    }
+    rpass_clear(
+        &mut encoder,
+        &surface_texture_view,
+        graphics.wgpu_state.clear_color,
+    );
+    graphics
+        .ui_pass
+        .execute(&mut encoder, &surface_texture_view);
 
-    graphics.queue.submit(std::iter::once(encoder.finish()));
+    graphics
+        .wgpu_state
+        .queue
+        .submit(std::iter::once(encoder.finish()));
     surface_texture.present();
     std::mem::drop(graphics);
+}
+
+fn rpass_clear(
+    encoder: &mut wgpu::CommandEncoder,
+    surface_texture_view: &wgpu::TextureView,
+    clear_color: wgpu::Color,
+) {
+    let _rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        label: Some("clear_pass"),
+        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+            view: surface_texture_view,
+            resolve_target: None,
+            ops: wgpu::Operations {
+                load: wgpu::LoadOp::Clear(clear_color),
+                store: wgpu::StoreOp::Store,
+            },
+        })],
+        depth_stencil_attachment: None,
+        timestamp_writes: None,
+        occlusion_query_set: None,
+    });
 }

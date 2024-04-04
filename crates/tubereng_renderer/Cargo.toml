@@ -7,5 +7,7 @@ edition = "2021"
 
 [dependencies]
 tubereng_ecs = { path = "../tubereng_ecs" }
+tubereng_math = { path = "../tubereng_math" }
 wgpu = { version = "0.19", features = ["webgl"] }
+bytemuck = { version = "1.15", features = ["derive"] }
 raw-window-handle = "0.6"
