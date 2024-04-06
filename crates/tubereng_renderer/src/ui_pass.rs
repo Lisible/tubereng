@@ -1,18 +1,23 @@
+use std::collections::{hash_map::Entry, HashMap};
+
 use tubereng_math::matrix::Matrix4f;
 use wgpu::include_wgsl;
 
-use crate::{DrawCommand, WgpuState};
+use crate::{font::Font, texture, Color, DrawCommand, WgpuState};
 
-const MAX_VERTICES: wgpu::BufferAddress = 100;
+const MAX_VERTICES: wgpu::BufferAddress = 1000;
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct Vertex {
     position: [f32; 3],
+    color: [f32; 3],
+    texture_coordinates: [f32; 2],
 }
 
 impl Vertex {
-    const ATTRIBUTES: [wgpu::VertexAttribute; 1] = wgpu::vertex_attr_array![0 => Float32x3];
+    const ATTRIBUTES: [wgpu::VertexAttribute; 3] =
+        wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x2];
 
     pub fn buffer_layout() -> wgpu::VertexBufferLayout<'static> {
         wgpu::VertexBufferLayout {
@@ -26,6 +31,7 @@ impl Vertex {
 pub struct UiPass {
     pipeline: wgpu::RenderPipeline,
     _common_uniforms_bind_group_layout: wgpu::BindGroupLayout,
+    font_atlas_bind_group_layout: wgpu::BindGroupLayout,
     render_data: RenderData,
 }
 
@@ -33,7 +39,7 @@ impl UiPass {
     pub fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
         let common_uniforms_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("common_uniform_bind_group_layout"),
+                label: Some("common_uniforms_bind_group_layout"),
                 entries: &[wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStages::VERTEX,
@@ -46,9 +52,35 @@ impl UiPass {
                 }],
             });
 
+        let font_atlas_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("font_atlas_bind_group_layout"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+            });
+
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("ui_pass_pipeline_layout"),
-            bind_group_layouts: &[&common_uniforms_bind_group_layout],
+            bind_group_layouts: &[
+                &common_uniforms_bind_group_layout,
+                &font_atlas_bind_group_layout,
+            ],
             push_constant_ranges: &[],
         });
 
@@ -82,7 +114,14 @@ impl UiPass {
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
                     format: wgpu::TextureFormat::Bgra8UnormSrgb,
-                    blend: None,
+                    blend: Some(wgpu::BlendState {
+                        color: wgpu::BlendComponent {
+                            src_factor: wgpu::BlendFactor::SrcAlpha,
+                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                            operation: wgpu::BlendOperation::Add,
+                        },
+                        alpha: wgpu::BlendComponent::default(),
+                    }),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
             }),
@@ -94,49 +133,204 @@ impl UiPass {
         Self {
             pipeline,
             _common_uniforms_bind_group_layout: common_uniforms_bind_group_layout,
+            font_atlas_bind_group_layout,
             render_data,
         }
     }
 
-    pub(crate) fn prepare(&mut self, state: &WgpuState<'_>, commands: &Vec<DrawCommand>) {
-        self.render_data.quad_count = 0;
+    pub(crate) fn prepare(
+        &mut self,
+        state: &WgpuState<'_>,
+        texture_cache: &texture::Cache,
+        default_font: &Font,
+        commands: &Vec<DrawCommand>,
+    ) {
+        self.render_data.quad_batches.clear();
         for command in commands {
-            let &DrawCommand::DrawUiQuad(DrawUiQuadCommand {
+            match &command {
+                DrawCommand::DrawUiQuad(DrawUiQuadCommand {
+                    x,
+                    y,
+                    width,
+                    height,
+                    texture_rect,
+                    color,
+                }) => self.draw_ui_quad(
+                    state,
+                    texture_cache,
+                    *x,
+                    *y,
+                    *width,
+                    *height,
+                    color,
+                    texture_rect,
+                    texture_cache.white(),
+                ),
+                DrawCommand::DrawUiText(DrawUiTextCommand { text, x, y, color }) => {
+                    self.draw_ui_text(state, texture_cache, default_font, text, *x, *y, color);
+                }
+            }
+        }
+    }
+
+    fn draw_ui_text(
+        &mut self,
+        state: &WgpuState<'_>,
+        texture_cache: &texture::Cache,
+        font: &Font,
+        text: &str,
+        x: f32,
+        y: f32,
+        color: &Color,
+    ) {
+        let letter_spacing = font.letter_spacing();
+        let mut x = x;
+        for char in text.chars() {
+            let glyph = font.glyphs().get(&char).unwrap();
+            let glyph_width = glyph.x1 - glyph.x0;
+            let glyph_height = glyph.y1 - glyph.y0;
+            self.draw_ui_quad(
+                state,
+                texture_cache,
                 x,
                 y,
-                width,
-                height,
-            }): &DrawCommand = command;
-
-            let vertices: [Vertex; 6] = [
-                Vertex {
-                    position: [x, y, 0.0],
+                glyph_width,
+                glyph_height,
+                color,
+                &texture::Rect {
+                    x: glyph.x0,
+                    y: glyph.y0,
+                    width: glyph_width,
+                    height: glyph_height,
                 },
-                Vertex {
-                    position: [x, y + height, 0.0],
-                },
-                Vertex {
-                    position: [x + width, y + height, 0.0],
-                },
-                Vertex {
-                    position: [x + width, y + height, 0.0],
-                },
-                Vertex {
-                    position: [x + width, y, 0.0],
-                },
-                Vertex {
-                    position: [x, y, 0.0],
-                },
-            ];
-
-            state.queue.write_buffer(
-                &self.render_data.vertex_buffer,
-                u64::from(self.render_data.quad_count) * 6 * std::mem::size_of::<Vertex>() as u64,
-                bytemuck::cast_slice(&vertices),
+                font.texture_id(),
             );
-
-            self.render_data.quad_count += 1;
+            x += glyph_width + letter_spacing;
         }
+    }
+
+    fn create_new_quad_batch(
+        &mut self,
+        device: &wgpu::Device,
+        texture_cache: &texture::Cache,
+        start_vertex_offset: u32,
+        texture_id: texture::Id,
+    ) {
+        if let Entry::Vacant(e) = self.render_data.texture_bind_groups.entry(texture_id) {
+            let texture = texture_cache.get(texture_id).unwrap();
+            let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+            let texture_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+                address_mode_u: wgpu::AddressMode::ClampToEdge,
+                address_mode_v: wgpu::AddressMode::ClampToEdge,
+                address_mode_w: wgpu::AddressMode::ClampToEdge,
+                mag_filter: wgpu::FilterMode::Nearest,
+                min_filter: wgpu::FilterMode::Nearest,
+                mipmap_filter: wgpu::FilterMode::Nearest,
+                ..Default::default()
+            });
+
+            let font_atlas_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: None,
+                layout: &self.font_atlas_bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&texture_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(&texture_sampler),
+                    },
+                ],
+            });
+
+            e.insert(font_atlas_bind_group);
+        }
+
+        self.render_data
+            .quad_batches
+            .push(QuadBatch::new(start_vertex_offset, texture_id));
+    }
+
+    fn draw_ui_quad(
+        &mut self,
+        state: &WgpuState<'_>,
+        texture_cache: &texture::Cache,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+        color: &Color,
+        texture_rect: &texture::Rect,
+        texture_id: texture::Id,
+    ) {
+        let batch = self.render_data.quad_batches.last_mut();
+        let batch = if let Some(batch) = batch {
+            let end_vertex_offset = batch.end_vertex_offset;
+            if batch.texture_id == texture_id {
+                batch
+            } else {
+                self.create_new_quad_batch(
+                    &state.device,
+                    texture_cache,
+                    end_vertex_offset,
+                    texture_id,
+                );
+                self.render_data.quad_batches.last_mut().unwrap()
+            }
+        } else {
+            self.create_new_quad_batch(&state.device, texture_cache, 0, texture_id);
+            self.render_data.quad_batches.last_mut().unwrap()
+        };
+
+        let texture = texture_cache.get(texture_id).unwrap();
+        let texture_size = texture.size();
+
+        let quad_u = texture_rect.x / texture_size.width as f32;
+        let quad_v = texture_rect.y / texture_size.height as f32;
+        let quad_texture_width = texture_rect.width / texture_size.width as f32;
+        let quad_texture_height = texture_rect.height / texture_size.height as f32;
+        let color = color.into();
+
+        let vertices: [Vertex; 6] = [
+            Vertex {
+                position: [x, y, 0.0],
+                color,
+                texture_coordinates: [quad_u, quad_v],
+            },
+            Vertex {
+                position: [x, y + height, 0.0],
+                color,
+                texture_coordinates: [quad_u, quad_v + quad_texture_height],
+            },
+            Vertex {
+                position: [x + width, y + height, 0.0],
+                color,
+                texture_coordinates: [quad_u + quad_texture_width, quad_v + quad_texture_height],
+            },
+            Vertex {
+                position: [x + width, y + height, 0.0],
+                color,
+                texture_coordinates: [quad_u + quad_texture_width, quad_v + quad_texture_height],
+            },
+            Vertex {
+                position: [x + width, y, 0.0],
+                color,
+                texture_coordinates: [quad_u + quad_texture_width, quad_v],
+            },
+            Vertex {
+                position: [x, y, 0.0],
+                color,
+                texture_coordinates: [quad_u, quad_v],
+            },
+        ];
+
+        state.queue.write_buffer(
+            &self.render_data.vertex_buffer,
+            u64::from(batch.end_vertex_offset) * std::mem::size_of::<Vertex>() as u64,
+            bytemuck::cast_slice(&vertices),
+        );
+        batch.end_vertex_offset += 6;
     }
 
     pub(crate) fn execute(
@@ -163,8 +357,13 @@ impl UiPass {
         rpass.set_vertex_buffer(0, self.render_data.vertex_buffer.slice(..));
         rpass.set_bind_group(0, &self.render_data.common_uniforms_bind_group, &[]);
 
-        for quad in 0u32..self.render_data.quad_count {
-            rpass.draw((quad * 6)..(quad * 6 + 6), 0..1);
+        for batch in &self.render_data.quad_batches {
+            rpass.set_bind_group(
+                1,
+                &self.render_data.texture_bind_groups[&batch.texture_id],
+                &[],
+            );
+            rpass.draw(batch.start_vertex_offset..batch.end_vertex_offset, 0..1);
         }
     }
 }
@@ -175,12 +374,29 @@ struct CommonUniforms {
     projection_matrix: [[f32; 4]; 4],
 }
 
+pub struct QuadBatch {
+    start_vertex_offset: u32,
+    end_vertex_offset: u32,
+    texture_id: texture::Id,
+}
+
+impl QuadBatch {
+    pub fn new(start_vertex_offset: u32, texture: texture::Id) -> Self {
+        Self {
+            start_vertex_offset,
+            end_vertex_offset: start_vertex_offset,
+            texture_id: texture,
+        }
+    }
+}
+
 struct RenderData {
     vertex_buffer: wgpu::Buffer,
-    quad_count: u32,
+    quad_batches: Vec<QuadBatch>,
 
     common_uniforms_bind_group: wgpu::BindGroup,
     _common_uniforms_buffer: wgpu::Buffer,
+    texture_bind_groups: HashMap<texture::Id, wgpu::BindGroup>,
 }
 
 impl RenderData {
@@ -224,9 +440,10 @@ impl RenderData {
 
         Self {
             vertex_buffer,
-            quad_count: 0,
+            quad_batches: vec![],
             common_uniforms_bind_group,
             _common_uniforms_buffer: common_uniforms_buffer,
+            texture_bind_groups: HashMap::new(),
         }
     }
 }
@@ -236,4 +453,13 @@ pub struct DrawUiQuadCommand {
     pub(crate) y: f32,
     pub(crate) width: f32,
     pub(crate) height: f32,
+    pub(crate) color: Color,
+    pub(crate) texture_rect: texture::Rect,
+}
+
+pub struct DrawUiTextCommand {
+    pub(crate) text: String,
+    pub(crate) x: f32,
+    pub(crate) y: f32,
+    pub(crate) color: Color,
 }

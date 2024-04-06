@@ -77,7 +77,7 @@ fn print_player_position(mut query_player_pos: Q<(&Player, &Position)>) {
 }
 
 fn draw_ui(mut ctx: ResMut<gui::Context>) {
-    gui::Window::new("some_window").show(&mut ctx);
+    gui::Label::new("ABCDEFGHIJKLMNOPQRSTUVWXYZ").show(&mut ctx);
     gui::Window::new("some_other_window")
         .init_position(500.0, 400.0)
         .init_size(100.0, 100.0)

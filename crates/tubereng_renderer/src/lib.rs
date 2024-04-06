@@ -2,11 +2,15 @@
 
 use std::borrow::BorrowMut;
 
+use font::Font;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawWindowHandle};
+use texture::{Cache, Rect};
 use tubereng_ecs::system::ResMut;
-use ui_pass::{DrawUiQuadCommand, UiPass};
+use ui_pass::{DrawUiQuadCommand, DrawUiTextCommand, UiPass};
 use wgpu::SurfaceTargetUnsafe;
 
+mod font;
+mod texture;
 mod ui_pass;
 pub struct WindowSize {
     pub width: u32,
@@ -15,6 +19,7 @@ pub struct WindowSize {
 
 enum DrawCommand {
     DrawUiQuad(DrawUiQuadCommand),
+    DrawUiText(DrawUiTextCommand),
 }
 
 pub struct WgpuState<'w> {
@@ -29,6 +34,8 @@ pub struct WgpuState<'w> {
 
 pub struct GraphicsState<'w> {
     pub(crate) wgpu_state: WgpuState<'w>,
+    default_font: Font,
+    texture_cache: Cache,
     commands: Vec<DrawCommand>,
     ui_pass: UiPass,
 }
@@ -127,6 +134,9 @@ impl<'w> GraphicsState<'w> {
 
         let ui_pass = UiPass::new(&device, &queue);
 
+        let mut texture_cache = Cache::new(&device, &queue);
+        let default_font = font::create_default_font(&device, &queue, &mut texture_cache);
+
         GraphicsState {
             wgpu_state: WgpuState {
                 surface,
@@ -145,18 +155,39 @@ impl<'w> GraphicsState<'w> {
                     .expect("Couldn't obtain window handle")
                     .into(),
             },
+            texture_cache,
             commands: vec![],
             ui_pass,
+            default_font,
         }
     }
 
-    pub fn draw_ui_quad(&mut self, x: f32, y: f32, width: f32, height: f32) {
+    pub fn draw_ui_quad(&mut self, x: f32, y: f32, width: f32, height: f32, color: Color) {
         self.commands
             .push(DrawCommand::DrawUiQuad(DrawUiQuadCommand {
                 x,
                 y,
                 width,
                 height,
+                texture_rect: Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 0.0,
+                    height: 0.0,
+                },
+                color,
+            }));
+    }
+    pub fn draw_ui_text<S>(&mut self, x: f32, y: f32, text: &S, color: Color)
+    where
+        S: ToString,
+    {
+        self.commands
+            .push(DrawCommand::DrawUiText(DrawUiTextCommand {
+                text: text.to_string(),
+                x,
+                y,
+                color,
             }));
     }
 }
@@ -179,9 +210,12 @@ pub fn update_clear_color(mut graphics: ResMut<GraphicsState>) {
 pub fn prepare_frame_system(mut graphics: ResMut<GraphicsState>) {
     let graphics = graphics.borrow_mut();
     let graphics = &mut ***graphics;
-    graphics
-        .ui_pass
-        .prepare(&graphics.wgpu_state, &graphics.commands);
+    graphics.ui_pass.prepare(
+        &graphics.wgpu_state,
+        &graphics.texture_cache,
+        &graphics.default_font,
+        &graphics.commands,
+    );
     graphics.commands.clear();
 }
 
@@ -239,4 +273,34 @@ fn rpass_clear(
         timestamp_writes: None,
         occlusion_query_set: None,
     });
+}
+
+pub struct Color {
+    r: f32,
+    g: f32,
+    b: f32,
+}
+
+impl Color {
+    pub const BLACK: Color = Color {
+        r: 0.0,
+        g: 0.0,
+        b: 0.0,
+    };
+    pub const WHITE: Color = Color {
+        r: 1.0,
+        g: 1.0,
+        b: 1.0,
+    };
+
+    #[must_use]
+    pub fn new(r: f32, g: f32, b: f32) -> Color {
+        Color { r, g, b }
+    }
+}
+
+impl From<&Color> for [f32; 3] {
+    fn from(value: &Color) -> Self {
+        [value.r, value.g, value.b]
+    }
 }

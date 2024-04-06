@@ -10,4 +10,5 @@ tubereng_ecs = { path = "../tubereng_ecs" }
 tubereng_math = { path = "../tubereng_math" }
 wgpu = { version = "0.19", features = ["webgl"] }
 bytemuck = { version = "1.15", features = ["derive"] }
+image = { version = "0.25", features = ["png", "rayon"] }
 raw-window-handle = "0.6"

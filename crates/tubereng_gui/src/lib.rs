@@ -7,7 +7,7 @@ use std::{
 use tubereng_ecs::system::Res;
 use tubereng_ecs::system::ResMut;
 use tubereng_input::{mouse, Input};
-use tubereng_renderer::GraphicsState;
+use tubereng_renderer::{Color, GraphicsState};
 
 pub type ComponentId = u64;
 pub struct Context {
@@ -101,6 +101,27 @@ impl Rect {
     }
 }
 
+pub trait Component: Renderable {
+    fn show(self, ctx: &mut Context);
+    fn rect(&self) -> &Rect;
+
+    fn on_hover(&mut self) {}
+    fn off_hover(&mut self) {}
+    fn is_hovering(&self) -> bool {
+        false
+    }
+    fn start_grabbing(&mut self) {}
+    fn stop_grabbing(&mut self) {}
+    fn is_grabbing(&self) -> bool {
+        false
+    }
+    fn move_rel(&mut self, _delta_pos: (f32, f32)) {}
+}
+
+pub trait Renderable {
+    fn render(&self, gfx: &mut GraphicsState);
+}
+
 pub struct Window {
     title: String,
     rect: Rect,
@@ -137,19 +158,6 @@ impl Window {
         self.rect.height = height;
         self
     }
-}
-
-pub trait Component: Renderable {
-    fn show(self, ctx: &mut Context);
-    fn rect(&self) -> &Rect;
-
-    fn on_hover(&mut self);
-    fn off_hover(&mut self);
-    fn is_hovering(&self) -> bool;
-    fn start_grabbing(&mut self);
-    fn stop_grabbing(&mut self);
-    fn is_grabbing(&self) -> bool;
-    fn move_rel(&mut self, delta_pos: (f32, f32));
 }
 
 impl Component for Window {
@@ -192,13 +200,54 @@ impl Component for Window {
     }
 }
 
-pub trait Renderable {
-    fn render(&self, gfx: &mut GraphicsState);
-}
-
 impl Renderable for Window {
     fn render(&self, gfx: &mut GraphicsState) {
-        gfx.draw_ui_quad(self.rect.x, self.rect.y, self.rect.width, self.rect.height);
+        gfx.draw_ui_quad(
+            self.rect.x,
+            self.rect.y,
+            self.rect.width,
+            self.rect.height,
+            Color::WHITE,
+        );
+    }
+}
+
+pub struct Label {
+    text: String,
+}
+
+impl Label {
+    pub fn new<S>(text: S) -> Self
+    where
+        S: ToString,
+    {
+        Self {
+            text: text.to_string(),
+        }
+    }
+}
+
+impl Renderable for Label {
+    fn render(&self, gfx: &mut GraphicsState) {
+        gfx.draw_ui_text(100.0, 200.0, &self.text, Color::BLACK);
+    }
+}
+
+impl Component for Label {
+    fn show(self, ctx: &mut Context) {
+        let mut hasher = DefaultHasher::new();
+        self.text.hash(&mut hasher);
+        let id = hasher.finish();
+        ctx.components.insert(id, Box::new(self));
+    }
+
+    fn rect(&self) -> &Rect {
+        &Rect {
+            x: 0.0,
+            y: 0.0,
+            width: 0.0,
+            height: 0.0,
+        }
     }
 }
 
