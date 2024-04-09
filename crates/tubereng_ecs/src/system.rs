@@ -174,7 +174,7 @@ macro_rules! impl_into_for_tuples {
         {
             fn into_system(self) -> System {
                 System {
-                    system_fn: Box::new(move |command_queue, resources, component_stores, entity_count| (self)($head::provide(command_queue, resources, component_stores, entity_count), $($tail::provide(command_queue, resources, component_stores, entity_count),)*)),
+                    system_fn: Box::new(move |command_queue, resources, component_stores, entity_count| (self)($head::provide(command_queue, resources, component_stores, entity_count).unwrap(), $($tail::provide(command_queue, resources, component_stores, entity_count).unwrap(),)*)),
                 }
             }
         }
@@ -193,7 +193,7 @@ pub trait Argument {
         resources: &'a Resources,
         component_stores: &'a ComponentStores,
         entity_count: usize,
-    ) -> Self::Type<'a>;
+    ) -> Option<Self::Type<'a>>;
 }
 
 impl Argument for () {
@@ -204,7 +204,29 @@ impl Argument for () {
         _resources: &'a Resources,
         _component_stores: &'a ComponentStores,
         _entity_count: usize,
-    ) -> Self::Type<'a> {
+    ) -> Option<Self::Type<'a>> {
+        Some(())
+    }
+}
+
+impl<A> Argument for Option<A>
+where
+    A: Argument,
+{
+    type Type<'a> = Option<A::Type<'a>>;
+
+    fn provide<'a>(
+        command_queue: &'a CommandQueue,
+        resources: &'a Resources,
+        component_stores: &'a ComponentStores,
+        entity_count: usize,
+    ) -> Option<Self::Type<'a>> {
+        Some(A::provide(
+            command_queue,
+            resources,
+            component_stores,
+            entity_count,
+        ))
     }
 }
 
@@ -248,8 +270,8 @@ where
         _resources: &'a Resources,
         component_stores: &'a ComponentStores,
         entity_count: usize,
-    ) -> Self::Type<'a> {
-        Q::new(component_stores, entity_count)
+    ) -> Option<Self::Type<'a>> {
+        Some(Q::new(component_stores, entity_count))
     }
 }
 
@@ -260,8 +282,8 @@ impl Argument for &CommandQueue {
         _resources: &'a Resources,
         _component_stores: &'a ComponentStores,
         _entity_count: usize,
-    ) -> Self::Type<'a> {
-        command_queue
+    ) -> Option<Self::Type<'a>> {
+        Some(command_queue)
     }
 }
 
@@ -282,11 +304,11 @@ impl<T: 'static> Argument for Res<'_, T> {
         resources: &'a Resources,
         _component_stores: &'a ComponentStores,
         _entity_count: usize,
-    ) -> Self::Type<'a> {
-        Res(Ref::map(
-            resources.get(&TypeId::of::<T>()).as_ref().unwrap().borrow(),
+    ) -> Option<Self::Type<'a>> {
+        Some(Res(Ref::map(
+            resources.get(&TypeId::of::<T>()).as_ref()?.borrow(),
             |r| r.downcast_ref::<T>().unwrap(),
-        ))
+        )))
     }
 }
 pub struct ResMut<'a, T>(RefMut<'a, T>);
@@ -311,15 +333,11 @@ impl<T: 'static> Argument for ResMut<'_, T> {
         resources: &'a Resources,
         _component_stores: &'a ComponentStores,
         _entity_count: usize,
-    ) -> Self::Type<'a> {
-        ResMut(RefMut::map(
-            resources
-                .get(&TypeId::of::<T>())
-                .as_ref()
-                .unwrap()
-                .borrow_mut(),
+    ) -> Option<Self::Type<'a>> {
+        Some(ResMut(RefMut::map(
+            resources.get(&TypeId::of::<T>()).as_ref()?.borrow_mut(),
             |r| r.downcast_mut::<T>().unwrap(),
-        ))
+        )))
     }
 }
 
@@ -353,5 +371,20 @@ mod tests {
             .into_system(),
         );
         assert_eq!(ecs.entity_count(), 3);
+    }
+
+    #[derive(Debug, PartialEq, Eq)]
+    struct MyResource;
+    #[test]
+    fn ecs_optional_arg() {
+        let mut ecs = Ecs::new();
+        ecs.run_single_run_system(
+            &(|res: Option<Res<MyResource>>| assert!(res.is_none())).into_system(),
+        );
+
+        ecs.insert_resource(MyResource);
+        ecs.run_single_run_system(
+            &(|res: Option<Res<MyResource>>| assert!(res.is_some())).into_system(),
+        );
     }
 }
