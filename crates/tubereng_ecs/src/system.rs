@@ -11,6 +11,7 @@ use crate::{query, ComponentStores, Resources};
 pub mod stages {
     pub struct Update;
     pub struct Render;
+    pub struct FinalizeRender;
 }
 
 pub struct Schedule {
@@ -24,6 +25,7 @@ impl Schedule {
         let stages = vec![
             TypeId::of::<stages::Update>(),
             TypeId::of::<stages::Render>(),
+            TypeId::of::<stages::FinalizeRender>(),
         ];
 
         let mut stages_systems = HashMap::new();

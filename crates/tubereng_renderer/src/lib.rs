@@ -1,8 +1,18 @@
 #![warn(clippy::pedantic)]
 
+use std::{borrow::BorrowMut, collections::HashMap, sync::Arc};
+
+use draw_triangle_pass::{create_draw_triangle_pass_pipeline, DrawTrianglePass};
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawWindowHandle};
-use tubereng_ecs::system::ResMut;
+use render_graph::{RenderGraph, RenderPass};
+use tubereng_ecs::{
+    system::{stages, Res, ResMut},
+    Ecs,
+};
 use wgpu::SurfaceTargetUnsafe;
+
+mod draw_triangle_pass;
+pub mod render_graph;
 
 pub struct WindowSize {
     pub width: u32,
@@ -14,7 +24,6 @@ pub struct WgpuState<'w> {
     device: wgpu::Device,
     queue: wgpu::Queue,
     _surface_configuration: wgpu::SurfaceConfiguration,
-    clear_color: wgpu::Color,
     _window_size: WindowSize,
     _window: RawWindowHandle,
 }
@@ -121,12 +130,6 @@ impl<'w> GraphicsState<'w> {
                 device,
                 queue,
                 _surface_configuration: surface_configuration,
-                clear_color: wgpu::Color {
-                    r: 0.1,
-                    g: 0.2,
-                    b: 0.3,
-                    a: 1.0,
-                },
                 _window_size: window_size,
                 _window: window
                     .window_handle()
@@ -137,37 +140,50 @@ impl<'w> GraphicsState<'w> {
     }
 }
 
-pub fn update_clear_color(mut graphics: ResMut<GraphicsState>) {
-    graphics.wgpu_state.clear_color.r += 0.0001;
-    if graphics.wgpu_state.clear_color.r > 1.0 {
-        graphics.wgpu_state.clear_color.r = 0.0;
-    }
-    graphics.wgpu_state.clear_color.g += 0.0003;
-    if graphics.wgpu_state.clear_color.g > 1.0 {
-        graphics.wgpu_state.clear_color.g = 0.0;
-    }
-    graphics.wgpu_state.clear_color.b += 0.0004;
-    if graphics.wgpu_state.clear_color.b > 1.0 {
-        graphics.wgpu_state.clear_color.b = 0.0;
-    }
+pub struct FrameRenderingContext {
+    pub surface_texture: Option<wgpu::SurfaceTexture>,
+    pub surface_texture_view: Option<wgpu::TextureView>,
+    pub encoder: Option<wgpu::CommandEncoder>,
 }
 
-pub fn prepare_frame_system(mut _graphics: ResMut<GraphicsState>) {
-    // let graphics = graphics.borrow_mut();
-    // let graphics = &mut ***graphics;
+pub async fn renderer_init<W>(ecs: &mut Ecs, window: Arc<W>)
+where
+    W: HasWindowHandle + HasDisplayHandle + std::marker::Send + std::marker::Sync,
+{
+    let gfx = GraphicsState::new(window).await;
+    let mut pipelines = RenderPipelines::new();
+    let draw_triangle_pass_pipeline = create_draw_triangle_pass_pipeline(
+        &gfx.wgpu_state.device,
+        wgpu::TextureFormat::Bgra8UnormSrgb,
+    );
+    pipelines.insert("draw_triangle_pass_pipeline", draw_triangle_pass_pipeline);
+
+    ecs.insert_resource(gfx);
+    ecs.insert_resource(RenderGraph::new());
+    ecs.insert_resource(FrameRenderingContext {
+        surface_texture: None,
+        surface_texture_view: None,
+        encoder: None,
+    });
+
+    ecs.insert_resource(pipelines);
+    ecs.register_system(&stages::Render, begin_frame_system);
+    ecs.register_system(&stages::Render, add_clear_pass);
+    ecs.register_system(&stages::Render, add_draw_triangle_pass);
+    ecs.register_system(&stages::FinalizeRender, finish_frame_system);
 }
 
-/// Renders a frame
-///
-/// # Panics
-///
-/// Panics if the surface texture cannot be obtained
-pub fn render_frame_system(graphics: ResMut<GraphicsState>) {
+fn begin_frame_system(
+    mut graphics: ResMut<GraphicsState>,
+    mut frame_ctx: ResMut<FrameRenderingContext>,
+    mut graph: ResMut<RenderGraph>,
+) {
+    let graphics = graphics.borrow_mut();
     let surface_texture = graphics.wgpu_state.surface.get_current_texture().unwrap();
     let surface_texture_view = surface_texture
         .texture
         .create_view(&wgpu::TextureViewDescriptor::default());
-    let mut encoder =
+    let encoder =
         graphics
             .wgpu_state
             .device
@@ -175,39 +191,102 @@ pub fn render_frame_system(graphics: ResMut<GraphicsState>) {
                 label: Some("encoder"),
             });
 
-    rpass_clear(
-        &mut encoder,
-        &surface_texture_view,
-        graphics.wgpu_state.clear_color,
-    );
+    frame_ctx.surface_texture = Some(surface_texture);
+    frame_ctx.surface_texture_view = Some(surface_texture_view);
+    frame_ctx.encoder = Some(encoder);
 
+    graph.clear();
+}
+
+/// Renders a frame
+///
+/// # Panics
+///
+/// Panics if the surface texture cannot be obtained
+fn finish_frame_system(
+    graphics: ResMut<GraphicsState>,
+    mut frame_ctx: ResMut<FrameRenderingContext>,
+    graph: Res<RenderGraph>,
+    pipelines: Res<RenderPipelines>,
+) {
+    let mut encoder = frame_ctx.encoder.take().unwrap();
+    let surface_texture_view = frame_ctx.surface_texture_view.take().unwrap();
+    graph.execute(&pipelines, &mut encoder, &surface_texture_view);
     graphics
         .wgpu_state
         .queue
         .submit(std::iter::once(encoder.finish()));
+
+    let surface_texture = frame_ctx.surface_texture.take().unwrap();
     surface_texture.present();
     std::mem::drop(graphics);
+    std::mem::drop(graph);
+    std::mem::drop(pipelines);
 }
 
-fn rpass_clear(
-    encoder: &mut wgpu::CommandEncoder,
-    surface_texture_view: &wgpu::TextureView,
-    clear_color: wgpu::Color,
-) {
-    let _rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-        label: Some("clear_pass"),
-        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-            view: surface_texture_view,
-            resolve_target: None,
-            ops: wgpu::Operations {
-                load: wgpu::LoadOp::Clear(clear_color),
-                store: wgpu::StoreOp::Store,
-            },
-        })],
-        depth_stencil_attachment: None,
-        timestamp_writes: None,
-        occlusion_query_set: None,
-    });
+fn add_clear_pass(mut graph: ResMut<RenderGraph>) {
+    graph.add_pass(ClearPass);
+}
+
+fn add_draw_triangle_pass(mut graph: ResMut<RenderGraph>) {
+    graph.add_pass(DrawTrianglePass);
+}
+
+pub struct ClearPass;
+impl RenderPass for ClearPass {
+    fn prepare(&mut self) {}
+    fn execute(
+        &self,
+        _pipelines: &RenderPipelines,
+        encoder: &mut wgpu::CommandEncoder,
+        surface_texture_view: &wgpu::TextureView,
+    ) {
+        let _rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("clear_pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: surface_texture_view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        });
+    }
+}
+
+pub struct RenderPipelines {
+    pipelines: HashMap<String, wgpu::RenderPipeline>,
+}
+
+impl RenderPipelines {
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            pipelines: HashMap::new(),
+        }
+    }
+
+    pub fn insert<S>(&mut self, identifier: S, pipeline: wgpu::RenderPipeline)
+    where
+        S: Into<String>,
+    {
+        self.pipelines.insert(identifier.into(), pipeline);
+    }
+
+    #[must_use]
+    pub fn get(&self, identifier: &str) -> &wgpu::RenderPipeline {
+        &self.pipelines[identifier]
+    }
+}
+
+impl Default for RenderPipelines {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 pub struct Color {

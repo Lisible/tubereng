@@ -4,7 +4,6 @@ use std::sync::Arc;
 
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use tubereng_input::{Input, InputState};
-use tubereng_renderer::GraphicsState;
 
 use tubereng_ecs::{
     system::{self},
@@ -26,19 +25,7 @@ impl Engine {
     where
         W: HasWindowHandle + HasDisplayHandle + std::marker::Send + std::marker::Sync,
     {
-        self.ecs.insert_resource(GraphicsState::new(window).await);
-        self.ecs.register_system(
-            &system::stages::Update,
-            tubereng_renderer::update_clear_color,
-        );
-        self.ecs.register_system(
-            &system::stages::Render,
-            tubereng_renderer::prepare_frame_system,
-        );
-        self.ecs.register_system(
-            &system::stages::Render,
-            tubereng_renderer::render_frame_system,
-        );
+        tubereng_renderer::renderer_init(&mut self.ecs, window).await;
     }
 
     /// Updates the state of the engine
