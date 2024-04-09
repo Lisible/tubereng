@@ -4,10 +4,9 @@ use log::info;
 use tubereng::{
     ecs::{
         commands::CommandQueue,
-        system::{stages::Update, Res, ResMut, Q},
+        system::{stages::Update, Res, Q},
     },
     engine::Engine,
-    gui::{self, Component},
     input::{keyboard::Key, InputState},
     winit::WinitTuberRunner,
 };
@@ -48,7 +47,6 @@ pub async fn run() {
             queue.insert((Enemy, Position(3, 1)));
             queue.register_system(&Update, update_player_position);
             queue.register_system(&Update, print_player_position);
-            queue.register_system(&Update, draw_ui);
         })
         .build();
     WinitTuberRunner::run(engine).await.unwrap();
@@ -74,12 +72,4 @@ fn update_player_position(
 fn print_player_position(mut query_player_pos: Q<(&Player, &Position)>) {
     let (_, position) = query_player_pos.iter().next().unwrap();
     info!("Player position: {position}")
-}
-
-fn draw_ui(mut ctx: ResMut<gui::Context>) {
-    gui::Label::new("ABCDEFGHIJKLMNOPQRSTUVWXYZ").show(&mut ctx);
-    gui::Window::new("some_other_window")
-        .init_position(500.0, 400.0)
-        .init_size(100.0, 100.0)
-        .show(&mut ctx);
 }

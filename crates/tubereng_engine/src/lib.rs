@@ -27,7 +27,6 @@ impl Engine {
         W: HasWindowHandle + HasDisplayHandle + std::marker::Send + std::marker::Sync,
     {
         self.ecs.insert_resource(GraphicsState::new(window).await);
-        self.ecs.insert_resource(tubereng_gui::Context::new());
         self.ecs.register_system(
             &system::stages::Update,
             tubereng_renderer::update_clear_color,
@@ -60,12 +59,6 @@ impl Engine {
             .resource_mut::<InputState>()
             .expect("InputState should be present in the engine's resources");
         input_state.on_input(&input);
-
-        let mut gui_context = self
-            .ecs
-            .resource_mut::<tubereng_gui::Context>()
-            .expect("gui::Context should be present in the engine's resources");
-        gui_context.on_input(&input);
     }
 
     #[must_use]
