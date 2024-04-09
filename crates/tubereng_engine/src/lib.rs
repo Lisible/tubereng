@@ -28,15 +28,16 @@ impl Engine {
     {
         self.ecs.insert_resource(GraphicsState::new(window).await);
         self.ecs.insert_resource(tubereng_gui::Context::new());
-        self.ecs
-            .register_system::<system::stages::Update, _, _>(tubereng_renderer::update_clear_color);
-        self.ecs.register_system::<system::stages::Render, _, _>(
-            tubereng_gui::emit_draw_commands_system,
+        self.ecs.register_system(
+            &system::stages::Update,
+            tubereng_renderer::update_clear_color,
         );
-        self.ecs.register_system::<system::stages::Render, _, _>(
+        self.ecs.register_system(
+            &system::stages::Render,
             tubereng_renderer::prepare_frame_system,
         );
-        self.ecs.register_system::<system::stages::Render, _, _>(
+        self.ecs.register_system(
+            &system::stages::Render,
             tubereng_renderer::render_frame_system,
         );
     }
