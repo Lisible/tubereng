@@ -46,9 +46,9 @@ pub async fn run() {
             queue.insert((Player, Position(23, 15)));
             queue.insert((Enemy, Position(2, 5)));
             queue.insert((Enemy, Position(3, 1)));
-            queue.register_system::<Update, _, _>(update_player_position);
-            queue.register_system::<Update, _, _>(print_player_position);
-            queue.register_system::<Update, _, _>(draw_ui);
+            queue.register_system(&Update, update_player_position);
+            queue.register_system(&Update, print_player_position);
+            queue.register_system(&Update, draw_ui);
         })
         .build();
     WinitTuberRunner::run(engine).await.unwrap();

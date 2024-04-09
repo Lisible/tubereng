@@ -145,7 +145,7 @@ impl Ecs {
         );
     }
 
-    pub fn register_system<S, F, A>(&mut self, stage: &S, system: F)
+    pub fn register_system<S, F, A>(&mut self, _stage: &S, system: F)
     where
         S: 'static,
         F: system::Into<A>,

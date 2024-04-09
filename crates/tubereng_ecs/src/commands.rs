@@ -26,7 +26,7 @@ impl CommandQueue {
         self.push_command(InsertResource::new(resource));
     }
 
-    pub fn register_system<S, F, A>(&self, system: F)
+    pub fn register_system<S, F, A>(&self, _stage: &S, system: F)
     where
         S: 'static,
         F: system::Into<A>,
