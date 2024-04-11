@@ -82,22 +82,28 @@ impl Command for InsertEntity {
     }
 }
 
-pub struct InsertResource {
-    resource: Option<Box<dyn Any>>,
+pub struct InsertResource<R>
+where
+    R: 'static,
+{
+    resource: Option<R>,
 }
 
-impl InsertResource {
-    pub fn new<R>(resource: R) -> Self
-    where
-        R: 'static,
-    {
+impl<R> InsertResource<R>
+where
+    R: 'static,
+{
+    pub fn new(resource: R) -> Self {
         Self {
-            resource: Some(Box::new(resource)),
+            resource: Some(resource),
         }
     }
 }
 
-impl Command for InsertResource {
+impl<R> Command for InsertResource<R>
+where
+    R: 'static,
+{
     fn apply(&mut self, ecs: &mut Ecs) {
         ecs.insert_resource(self.resource.take().unwrap());
     }

@@ -6,7 +6,7 @@ use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 
 use crate::commands::CommandQueue;
-use crate::{query, ComponentStores, Resources};
+use crate::{query, ComponentStores, Storage};
 
 pub mod stages {
     pub struct Update;
@@ -46,17 +46,11 @@ impl Schedule {
     /// # Panics
     ///
     /// Will panic if the systems of a stage cannot be found
-    pub fn run_systems(
-        &mut self,
-        component_stores: &mut ComponentStores,
-        resources: &mut Resources,
-        command_queue: &mut CommandQueue,
-        entity_count: usize,
-    ) {
+    pub fn run_systems(&mut self, storage: &mut Storage, command_queue: &mut CommandQueue) {
         for stage in &self.stages {
             let systems = self.stages_systems.get_mut(stage).unwrap();
             for system in systems.iter_mut() {
-                system.run(component_stores, resources, command_queue, entity_count);
+                system.run(storage, command_queue);
             }
         }
     }
@@ -99,21 +93,15 @@ impl Default for Schedule {
     }
 }
 
-type SystemFn = Box<dyn Fn(&mut CommandQueue, &Resources, &ComponentStores, usize)>;
+type SystemFn = Box<dyn Fn(&mut CommandQueue, &Storage)>;
 
 pub struct System {
     system_fn: SystemFn,
 }
 
 impl System {
-    pub fn run(
-        &self,
-        component_stores: &mut ComponentStores,
-        resources: &mut Resources,
-        command_queue: &mut CommandQueue,
-        entity_count: usize,
-    ) {
-        (self.system_fn)(command_queue, resources, component_stores, entity_count);
+    pub fn run(&self, storage: &mut Storage, command_queue: &mut CommandQueue) {
+        (self.system_fn)(command_queue, storage);
     }
 }
 
@@ -121,7 +109,7 @@ pub struct Noop;
 impl<A> Into<A> for Noop {
     fn into_system(self) -> System {
         System {
-            system_fn: Box::new(|_, _, _, _| {}),
+            system_fn: Box::new(|_, _| {}),
         }
     }
 }
@@ -161,7 +149,7 @@ where
 {
     fn into_system(self) -> System {
         System {
-            system_fn: Box::new(move |_, _, _, _| (self)()),
+            system_fn: Box::new(move |_, _| (self)()),
         }
     }
 }
@@ -176,7 +164,7 @@ macro_rules! impl_into_for_tuples {
         {
             fn into_system(self) -> System {
                 System {
-                    system_fn: Box::new(move |command_queue, resources, component_stores, entity_count| (self)($head::provide(command_queue, resources, component_stores, entity_count).unwrap(), $($tail::provide(command_queue, resources, component_stores, entity_count).unwrap(),)*)),
+                    system_fn: Box::new(move |command_queue, storage| (self)($head::provide(command_queue, storage).unwrap(), $($tail::provide(command_queue, storage).unwrap(),)*)),
                 }
             }
         }
@@ -190,12 +178,8 @@ impl_into_for_tuples!(F, E, D, C, B, A,);
 
 pub trait Argument {
     type Type<'a>;
-    fn provide<'a>(
-        command_queue: &'a CommandQueue,
-        resources: &'a Resources,
-        component_stores: &'a ComponentStores,
-        entity_count: usize,
-    ) -> Option<Self::Type<'a>>;
+    fn provide<'a>(command_queue: &'a CommandQueue, storage: &'a Storage)
+        -> Option<Self::Type<'a>>;
 }
 
 impl Argument for () {
@@ -203,11 +187,20 @@ impl Argument for () {
 
     fn provide<'a>(
         _command_queue: &'a CommandQueue,
-        _resources: &'a Resources,
-        _component_stores: &'a ComponentStores,
-        _entity_count: usize,
+        _storage: &'a Storage,
     ) -> Option<Self::Type<'a>> {
         Some(())
+    }
+}
+
+impl Argument for &Storage {
+    type Type<'a> = &'a Storage;
+
+    fn provide<'a>(
+        _command_queue: &'a CommandQueue,
+        storage: &'a Storage,
+    ) -> Option<Self::Type<'a>> {
+        Some(storage)
     }
 }
 
@@ -219,16 +212,9 @@ where
 
     fn provide<'a>(
         command_queue: &'a CommandQueue,
-        resources: &'a Resources,
-        component_stores: &'a ComponentStores,
-        entity_count: usize,
+        storage: &'a Storage,
     ) -> Option<Self::Type<'a>> {
-        Some(A::provide(
-            command_queue,
-            resources,
-            component_stores,
-            entity_count,
-        ))
+        Some(A::provide(command_queue, storage))
     }
 }
 
@@ -269,11 +255,9 @@ where
 
     fn provide<'a>(
         _command_queue: &'a CommandQueue,
-        _resources: &'a Resources,
-        component_stores: &'a ComponentStores,
-        entity_count: usize,
+        storage: &'a Storage,
     ) -> Option<Self::Type<'a>> {
-        Some(Q::new(component_stores, entity_count))
+        Some(Q::new(&storage.component_stores, storage.entity_count()))
     }
 }
 
@@ -281,9 +265,7 @@ impl Argument for &CommandQueue {
     type Type<'a> = &'a CommandQueue;
     fn provide<'a>(
         command_queue: &'a CommandQueue,
-        _resources: &'a Resources,
-        _component_stores: &'a ComponentStores,
-        _entity_count: usize,
+        _storage: &'a Storage,
     ) -> Option<Self::Type<'a>> {
         Some(command_queue)
     }
@@ -303,12 +285,10 @@ impl<T: 'static> Argument for Res<'_, T> {
 
     fn provide<'a>(
         _command_queue: &'a CommandQueue,
-        resources: &'a Resources,
-        _component_stores: &'a ComponentStores,
-        _entity_count: usize,
+        storage: &'a Storage,
     ) -> Option<Self::Type<'a>> {
         Some(Res(Ref::map(
-            resources.get(&TypeId::of::<T>()).as_ref()?.borrow(),
+            storage.resources.get(&TypeId::of::<T>()).as_ref()?.borrow(),
             |r| r.downcast_ref::<T>().unwrap(),
         )))
     }
@@ -332,12 +312,14 @@ impl<T: 'static> Argument for ResMut<'_, T> {
 
     fn provide<'a>(
         _command_queue: &'a CommandQueue,
-        resources: &'a Resources,
-        _component_stores: &'a ComponentStores,
-        _entity_count: usize,
+        storage: &'a Storage,
     ) -> Option<Self::Type<'a>> {
         Some(ResMut(RefMut::map(
-            resources.get(&TypeId::of::<T>()).as_ref()?.borrow_mut(),
+            storage
+                .resources
+                .get(&TypeId::of::<T>())
+                .as_ref()?
+                .borrow_mut(),
             |r| r.downcast_mut::<T>().unwrap(),
         )))
     }

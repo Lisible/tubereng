@@ -22,32 +22,25 @@ pub type ComponentStores = HashMap<TypeId, ComponentStore>;
 pub type Resources = HashMap<TypeId, RefCell<Box<dyn Any>>>;
 
 const MAX_ENTITY_COUNT: usize = 1024;
-pub struct Ecs {
+pub struct Storage {
     next_entity_id: EntityId,
     component_stores: ComponentStores,
     resources: Resources,
-    command_queue: CommandQueue,
-    system_schedule: system::Schedule,
 }
 
-impl Ecs {
-    #[must_use]
+impl Storage {
     pub fn new() -> Self {
-        Ecs {
+        Self {
             next_entity_id: 0,
             component_stores: ComponentStores::new(),
             resources: Resources::new(),
-            command_queue: CommandQueue::new(),
-            system_schedule: system::Schedule::new(),
         }
     }
 
-    #[must_use]
     pub fn entity_count(&self) -> usize {
         self.next_entity_id
     }
 
-    /// Inserts a new entity with its components into the Ecs
     pub fn insert<ED>(&mut self, entity_definition: ED) -> EntityId
     where
         ED: EntityDefinition,
@@ -58,13 +51,98 @@ impl Ecs {
         entity_id
     }
 
-    /// Inserts a resource into the Ecs, replaces it if already present
     pub fn insert_resource<R>(&mut self, resource: R)
     where
         R: Any,
     {
         self.resources
             .insert(TypeId::of::<R>(), RefCell::new(Box::new(resource)));
+    }
+
+    pub fn resource<R: Any>(&self) -> Option<Ref<'_, R>> {
+        Some(Ref::map(
+            self.resources.get(&TypeId::of::<R>())?.borrow(),
+            |r| r.downcast_ref::<R>().expect("Couldn't downcast resource"),
+        ))
+    }
+
+    pub fn resource_mut<R: Any>(&self) -> Option<RefMut<'_, R>> {
+        Some(RefMut::map(
+            self.resources.get(&TypeId::of::<R>())?.borrow_mut(),
+            |r| r.downcast_mut::<R>().expect("Couldn't downcast resource"),
+        ))
+    }
+
+    #[must_use]
+    pub fn component<C>(&self, entity_id: EntityId) -> Option<&C>
+    where
+        C: 'static,
+    {
+        self.component_stores
+            .get(&TypeId::of::<C>())?
+            .get(entity_id)
+    }
+
+    #[must_use]
+    pub fn component_mut<C>(&self, entity_id: EntityId) -> Option<&mut C>
+    where
+        C: 'static,
+    {
+        self.component_stores
+            .get(&TypeId::of::<C>())?
+            .get_mut(entity_id)
+    }
+
+    #[must_use]
+    pub fn query<QD>(&self) -> query::State<QD>
+    where
+        QD: query::Definition,
+    {
+        query::State::new(&self.component_stores, self.entity_count())
+    }
+
+    fn allocate_entity(&mut self) -> EntityId {
+        let entity_id = self.next_entity_id;
+        self.next_entity_id += 1;
+        entity_id
+    }
+}
+
+pub struct Ecs {
+    storage: Storage,
+    command_queue: CommandQueue,
+    system_schedule: system::Schedule,
+}
+
+impl Ecs {
+    #[must_use]
+    pub fn new() -> Self {
+        Ecs {
+            storage: Storage::new(),
+            command_queue: CommandQueue::new(),
+            system_schedule: system::Schedule::new(),
+        }
+    }
+
+    #[must_use]
+    pub fn entity_count(&self) -> usize {
+        self.storage.entity_count()
+    }
+
+    /// Inserts a new entity with its components into the Ecs
+    pub fn insert<ED>(&mut self, entity_definition: ED) -> EntityId
+    where
+        ED: EntityDefinition,
+    {
+        self.storage.insert(entity_definition)
+    }
+
+    /// Inserts a resource into the Ecs, replaces it if already present
+    pub fn insert_resource<R>(&mut self, resource: R)
+    where
+        R: Any,
+    {
+        self.storage.insert_resource(resource);
     }
 
     pub fn command_queue(&self) -> &CommandQueue {
@@ -77,10 +155,7 @@ impl Ecs {
     ///
     /// Will panic if the downcasting to the resource type
     pub fn resource<R: Any>(&self) -> Option<Ref<'_, R>> {
-        Some(Ref::map(
-            self.resources.get(&TypeId::of::<R>())?.borrow(),
-            |r| r.downcast_ref::<R>().expect("Couldn't downcast resource"),
-        ))
+        self.storage.resource()
     }
 
     /// Retrieves a ``RefMut`` to a stored resource or None if its not found
@@ -89,10 +164,7 @@ impl Ecs {
     ///
     /// Will panic if the downcasting to the resource type
     pub fn resource_mut<R: Any>(&self) -> Option<RefMut<'_, R>> {
-        Some(RefMut::map(
-            self.resources.get(&TypeId::of::<R>())?.borrow_mut(),
-            |r| r.downcast_mut::<R>().expect("Couldn't downcast resource"),
-        ))
+        self.storage.resource_mut()
     }
 
     /// Returns an immutable reference to a component in the Ecs, or `None` if not found.
@@ -101,9 +173,7 @@ impl Ecs {
     where
         C: 'static,
     {
-        self.component_stores
-            .get(&TypeId::of::<C>())?
-            .get(entity_id)
+        self.storage.component(entity_id)
     }
 
     /// Returns a mutable reference to a component in the Ecs, or `None` if not found.
@@ -112,37 +182,24 @@ impl Ecs {
     where
         C: 'static,
     {
-        self.component_stores
-            .get(&TypeId::of::<C>())?
-            .get_mut(entity_id)
+        self.storage.component_mut(entity_id)
     }
 
     pub fn query<QD>(&mut self) -> query::State<QD>
     where
         QD: query::Definition,
     {
-        query::State::new(&self.component_stores, self.entity_count())
+        self.storage.query()
     }
 
     pub fn run_single_run_system(&mut self, system: &system::System) {
-        let entity_count = self.entity_count();
-        system.run(
-            &mut self.component_stores,
-            &mut self.resources,
-            &mut self.command_queue,
-            entity_count,
-        );
+        system.run(&mut self.storage, &mut self.command_queue);
         self.process_command_queue();
     }
 
     pub fn run_systems(&mut self) {
-        let entity_count = self.entity_count();
-        self.system_schedule.run_systems(
-            &mut self.component_stores,
-            &mut self.resources,
-            &mut self.command_queue,
-            entity_count,
-        );
+        self.system_schedule
+            .run_systems(&mut self.storage, &mut self.command_queue);
     }
 
     pub fn register_system<S, F, A>(&mut self, _stage: &S, system: F)
@@ -167,12 +224,6 @@ impl Ecs {
         for mut command in command_queue {
             command.apply(self);
         }
-    }
-
-    fn allocate_entity(&mut self) -> EntityId {
-        let entity_id = self.next_entity_id;
-        self.next_entity_id += 1;
-        entity_id
     }
 }
 

@@ -1,18 +1,24 @@
 #![warn(clippy::pedantic)]
 
 use std::sync::Arc;
+use tubereng_asset::AssetStore;
+use tubereng_asset::{vfs::filesystem::FileSystem, AssetLoader};
 
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
+use tubereng_image::{Image, ImageLoader};
 use tubereng_input::{Input, InputState};
 
 use tubereng_ecs::{
-    system::{self},
+    system::{self, System},
     Ecs,
 };
+use tubereng_renderer::texture;
 
 pub struct Engine {
     application_title: &'static str,
     ecs: Ecs,
+    init_system: System,
+    init_system_ran: bool,
 }
 
 impl Engine {
@@ -25,11 +31,26 @@ impl Engine {
     where
         W: HasWindowHandle + HasDisplayHandle + std::marker::Send + std::marker::Sync,
     {
-        tubereng_renderer::renderer_init(&mut self.ecs, window).await;
+        println!("Init gfx");
+
+        let placeholder_texture_image = ImageLoader::load(include_bytes!("../res/placeholder.png"))
+            .expect("Placeholder texture couldn't be loaded from memory");
+        let placeholder_texture_descriptor = texture::Descriptor {
+            data: placeholder_texture_image.data(),
+            width: placeholder_texture_image.width(),
+            height: placeholder_texture_image.height(),
+        };
+        tubereng_renderer::renderer_init(&mut self.ecs, window, &placeholder_texture_descriptor)
+            .await;
     }
 
     /// Updates the state of the engine
     pub fn update(&mut self) {
+        if !self.init_system_ran {
+            self.ecs.run_single_run_system(&self.init_system);
+            self.init_system_ran = true;
+        }
+
         self.ecs.run_systems();
     }
 
@@ -84,15 +105,17 @@ impl EngineBuilder {
     pub fn build(&mut self) -> Engine {
         let mut ecs = Ecs::new();
         ecs.insert_resource(InputState::new());
-        ecs.run_single_run_system(
-            &self
-                .init_system
-                .take()
-                .unwrap_or(system::Into::<()>::into_system(system::Noop)),
-        );
+        ecs.insert_resource(AssetStore::new(FileSystem));
+
+        let init_system = self
+            .init_system
+            .take()
+            .unwrap_or(system::Into::<()>::into_system(system::Noop));
         Engine {
             application_title: self.application_title,
             ecs,
+            init_system,
+            init_system_ran: false,
         }
     }
 }

@@ -1,13 +1,18 @@
-use std::fmt::Display;
+#![warn(clippy::all)]
 
-use log::info;
 use tubereng::{
+    asset::AssetStore,
+    core::Transform,
     ecs::{
         commands::CommandQueue,
-        system::{stages::Update, Res, Q},
+        system::{stages, Res, ResMut, Q},
     },
     engine::Engine,
+    image::Image,
     input::{keyboard::Key, InputState},
+    math::vector::Vector3f,
+    renderer::texture,
+    renderer::{material, sprite::Sprite, GraphicsState},
     winit::WinitTuberRunner,
 };
 
@@ -18,16 +23,6 @@ use wasm_bindgen::prelude::*;
 struct Player;
 #[derive(Debug)]
 struct Enemy;
-
-#[derive(Debug)]
-#[allow(dead_code)]
-struct Position(i32, i32);
-
-impl Display for Position {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "({}, {})", self.0, self.1)
-    }
-}
 
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen(start))]
 pub async fn run() {
@@ -41,35 +36,80 @@ pub async fn run() {
     }
     let engine = Engine::builder()
         .with_application_title("basic-app")
-        .with_init_system(|queue: &CommandQueue| {
-            queue.insert((Player, Position(23, 15)));
-            queue.insert((Enemy, Position(2, 5)));
-            queue.insert((Enemy, Position(3, 1)));
-            queue.register_system(&Update, update_player_position);
-            queue.register_system(&Update, print_player_position);
-        })
+        .with_init_system(init)
         .build();
     WinitTuberRunner::run(engine).await.unwrap();
 }
 
-fn update_player_position(
-    input_state: Res<InputState>,
-    mut query_player_pos: Q<(&Player, &mut Position)>,
-) {
-    let is_key_down = |k| input_state.keyboard.is_key_down(k);
-    let (_, position) = query_player_pos.first().unwrap();
-    if is_key_down(Key::W) {
-        position.1 += 1;
-    } else if is_key_down(Key::S) {
-        position.1 -= 1;
-    } else if is_key_down(Key::A) {
-        position.0 -= 1;
-    } else if is_key_down(Key::D) {
-        position.0 += 1;
-    }
+fn init(queue: &CommandQueue, asset_store: ResMut<AssetStore>, mut gfx: ResMut<GraphicsState>) {
+    let image = asset_store
+        .load_without_storing::<Image>("texture.png")
+        .unwrap();
+
+    let texture_id = gfx.load_texture(&texture::Descriptor {
+        data: image.data(),
+        width: image.width(),
+        height: image.height(),
+    });
+
+    let material_id = gfx.load_material(&material::Descriptor {
+        base_color: texture_id,
+    });
+
+    queue.insert((
+        Player,
+        Transform {
+            translation: Vector3f::new(0.0, 0.0, 0.0),
+            scale: Vector3f::new(0.1, 0.1, 0.1),
+            ..Default::default()
+        },
+        Sprite {
+            material: Some(material_id),
+        },
+    ));
+    queue.insert((
+        Enemy,
+        Transform {
+            translation: Vector3f::new(-1.0, -1.0, 0.0),
+            scale: Vector3f::new(0.1, 0.1, 0.1),
+            ..Default::default()
+        },
+        Sprite::default(),
+    ));
+    queue.insert((
+        Enemy,
+        Transform {
+            scale: Vector3f::new(0.1, 0.1, 0.1),
+            ..Default::default()
+        },
+        Sprite::default(),
+    ));
+    queue.insert((
+        Enemy,
+        Transform {
+            scale: Vector3f::new(0.1, 0.1, 0.1),
+            ..Default::default()
+        },
+        Sprite::default(),
+    ));
+
+    queue.register_system(&stages::Update, move_player);
 }
 
-fn print_player_position(mut query_player_pos: Q<(&Player, &Position)>) {
-    let (_, position) = query_player_pos.iter().next().unwrap();
-    info!("Player position: {position}")
+fn move_player(input: Res<InputState>, mut query_player: Q<(&Player, &mut Transform)>) {
+    let (_, transform) = query_player
+        .first()
+        .expect("A player should be present in the scene");
+
+    if input.keyboard.is_key_down(Key::S) {
+        transform.translation.y -= 0.001;
+    } else if input.keyboard.is_key_down(Key::W) {
+        transform.translation.y += 0.001;
+    }
+
+    if input.keyboard.is_key_down(Key::A) {
+        transform.translation.x -= 0.001;
+    } else if input.keyboard.is_key_down(Key::D) {
+        transform.translation.x += 0.001;
+    }
 }

@@ -8,6 +8,8 @@ edition = "2021"
 [dependencies]
 tubereng_ecs = { path = "../tubereng_ecs" }
 tubereng_input = { path = "../tubereng_input" }
+tubereng_asset = { path = "../tubereng_asset" }
+tubereng_image = { path = "../tubereng_image" }
 tubereng_gui = { path = "../tubereng_gui" }
 tubereng_renderer = { path = "../tubereng_renderer" }
 raw-window-handle = "0.6"
