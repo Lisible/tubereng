@@ -27,8 +27,8 @@ pub struct WgpuState<'w> {
     surface: wgpu::Surface<'w>,
     device: wgpu::Device,
     queue: wgpu::Queue,
-    _surface_configuration: wgpu::SurfaceConfiguration,
-    _window_size: WindowSize,
+    surface_configuration: wgpu::SurfaceConfiguration,
+    window_size: WindowSize,
     _window: RawWindowHandle,
 }
 
@@ -38,7 +38,6 @@ pub struct GraphicsState<'w> {
     material_bind_group_layout: wgpu::BindGroupLayout,
     placeholder_material_id: Option<material::Id>,
     pub(crate) material_cache: material::Cache,
-    pub(crate) mesh_cache: mesh::Cache,
 }
 
 impl<'w> GraphicsState<'w> {
@@ -65,28 +64,7 @@ impl<'w> GraphicsState<'w> {
             ..Default::default()
         });
 
-        let mut surface = unsafe {
-            instance.create_surface_unsafe(
-                SurfaceTargetUnsafe::from_window(&window)
-                    .expect("Couldn't create SurfaceTargetUnsafe"),
-            )
-        };
-
-        if surface.is_err() {
-            instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-                backends: wgpu::Backends::GL,
-                ..Default::default()
-            });
-
-            surface = unsafe {
-                instance.create_surface_unsafe(
-                    SurfaceTargetUnsafe::from_window(&window)
-                        .expect("Couldn't create SurfaceTargetUnsafe"),
-                )
-            };
-        }
-
-        let surface = surface.unwrap();
+        let surface = Self::create_surface(&mut instance, &window);
 
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
@@ -161,8 +139,8 @@ impl<'w> GraphicsState<'w> {
                 surface,
                 device,
                 queue,
-                _surface_configuration: surface_configuration,
-                _window_size: window_size,
+                surface_configuration,
+                window_size,
                 _window: window
                     .window_handle()
                     .expect("Couldn't obtain window handle")
@@ -172,29 +150,51 @@ impl<'w> GraphicsState<'w> {
             material_cache: material::Cache::new(),
             placeholder_material_id: None,
             material_bind_group_layout,
-            mesh_cache: mesh::Cache::new(),
         }
     }
 
-    pub fn load_mesh(&mut self, mesh: &mesh::Descriptor) -> mesh::Id {
-        let vertex_buffer = self
-            .wgpu_state
-            .device
-            .create_buffer(&wgpu::BufferDescriptor {
-                label: None,
-                size: (mesh.vertices.len() * std::mem::size_of::<mesh::Vertex>())
-                    as wgpu::BufferAddress,
-                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            });
-        self.wgpu_state
-            .queue
-            .write_buffer(&vertex_buffer, 0, bytemuck::cast_slice(&mesh.vertices));
+    pub fn window_size(&self) -> &WindowSize {
+        &self.wgpu_state.window_size
+    }
 
-        self.mesh_cache.insert(mesh::GpuMesh {
-            vertex_buffer,
-            vertex_count: mesh.vertices.len(),
-        })
+    pub fn device(&self) -> &wgpu::Device {
+        &self.wgpu_state.device
+    }
+
+    pub fn queue(&self) -> &wgpu::Queue {
+        &self.wgpu_state.queue
+    }
+
+    pub fn surface_texture_format(&self) -> wgpu::TextureFormat {
+        self.wgpu_state.surface_configuration.format
+    }
+
+    fn create_surface<W>(instance: &mut wgpu::Instance, window: &W) -> wgpu::Surface<'w>
+    where
+        W: HasWindowHandle + HasDisplayHandle + std::marker::Send + std::marker::Sync,
+    {
+        let mut surface = unsafe {
+            instance.create_surface_unsafe(
+                SurfaceTargetUnsafe::from_window(window)
+                    .expect("Couldn't create SurfaceTargetUnsafe"),
+            )
+        };
+
+        if surface.is_err() {
+            *instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+                backends: wgpu::Backends::GL,
+                ..Default::default()
+            });
+
+            surface = unsafe {
+                instance.create_surface_unsafe(
+                    SurfaceTargetUnsafe::from_window(window)
+                        .expect("Couldn't create SurfaceTargetUnsafe"),
+                )
+            };
+        }
+
+        surface.unwrap()
     }
 
     pub fn load_texture(&mut self, descriptor: &texture::Descriptor) -> texture::Id {
@@ -294,11 +294,13 @@ pub async fn renderer_init<W>(
     });
     gfx.placeholder_material_id = Some(placeholder_material_id);
 
+    let surface_texture_format = gfx.wgpu_state.surface_configuration.format;
+
     let mut pipelines = RenderPipelines::new();
     let pass_2d = create_pass_2d_pipeline(
         &gfx.wgpu_state.device,
         &gfx.material_bind_group_layout,
-        wgpu::TextureFormat::Bgra8UnormSrgb,
+        surface_texture_format,
     );
     pipelines.insert("pass_2d_pipeline", pass_2d);
 

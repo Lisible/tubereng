@@ -23,3 +23,6 @@ wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4.30"
 pollster = "0.3"
 
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+include_dir = "0.7"
+

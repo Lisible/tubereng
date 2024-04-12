@@ -1,11 +1,13 @@
 #![warn(clippy::pedantic)]
 
 use std::sync::Arc;
+use tubereng_asset::vfs::filesystem::FileSystem;
+use tubereng_asset::vfs::VirtualFileSystem;
+use tubereng_asset::AssetLoader;
 use tubereng_asset::AssetStore;
-use tubereng_asset::{vfs::filesystem::FileSystem, AssetLoader};
 
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
-use tubereng_image::{Image, ImageLoader};
+use tubereng_image::ImageLoader;
 use tubereng_input::{Input, InputState};
 
 use tubereng_ecs::{
@@ -23,7 +25,10 @@ pub struct Engine {
 
 impl Engine {
     #[must_use]
-    pub fn builder() -> EngineBuilder {
+    pub fn builder<VFS>() -> EngineBuilder<VFS>
+    where
+        VFS: VirtualFileSystem + 'static,
+    {
         EngineBuilder::new()
     }
 
@@ -75,17 +80,22 @@ impl Engine {
     }
 }
 
-pub struct EngineBuilder {
+pub struct EngineBuilder<VFS> {
     application_title: &'static str,
     init_system: Option<system::System>,
+    vfs: Option<VFS>,
 }
 
-impl EngineBuilder {
+impl<VFS> EngineBuilder<VFS>
+where
+    VFS: VirtualFileSystem + 'static,
+{
     #[must_use]
     pub fn new() -> Self {
         Self {
             application_title: "Tuber application",
             init_system: None,
+            vfs: None,
         }
     }
 
@@ -102,10 +112,15 @@ impl EngineBuilder {
         self
     }
 
+    pub fn with_vfs(&mut self, vfs: VFS) -> &mut Self {
+        self.vfs = Some(vfs);
+        self
+    }
+
     pub fn build(&mut self) -> Engine {
         let mut ecs = Ecs::new();
         ecs.insert_resource(InputState::new());
-        ecs.insert_resource(AssetStore::new(FileSystem));
+        ecs.insert_resource(AssetStore::new(self.vfs.take().unwrap()));
 
         let init_system = self
             .init_system
@@ -120,7 +135,7 @@ impl EngineBuilder {
     }
 }
 
-impl Default for EngineBuilder {
+impl Default for EngineBuilder<FileSystem> {
     fn default() -> Self {
         Self::new()
     }

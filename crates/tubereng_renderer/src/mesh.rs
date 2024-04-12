@@ -1,9 +1,5 @@
 use std::ops::Deref;
 
-use tubereng_core::Transform;
-
-use crate::{material, texture};
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Id(usize);
 impl Deref for Id {
@@ -12,32 +8,6 @@ impl Deref for Id {
     fn deref(&self) -> &Self::Target {
         &self.0
     }
-}
-
-pub struct Cache {
-    meshes: Vec<GpuMesh>,
-}
-
-impl Cache {
-    #[must_use]
-    pub fn new() -> Self {
-        Self { meshes: vec![] }
-    }
-
-    pub fn insert(&mut self, mesh: GpuMesh) -> Id {
-        self.meshes.push(mesh);
-        Id(self.meshes.len() - 1)
-    }
-
-    #[must_use]
-    pub fn get(&self, id: Id) -> &GpuMesh {
-        &self.meshes[*id]
-    }
-}
-
-pub struct GpuMesh {
-    pub(crate) vertex_buffer: wgpu::Buffer,
-    pub(crate) vertex_count: usize,
 }
 
 #[repr(C)]
@@ -58,13 +28,4 @@ impl Vertex {
             attributes: &Self::ATTRIBUTES,
         }
     }
-}
-
-pub struct Descriptor {
-    pub(crate) vertices: Vec<Vertex>,
-}
-
-pub struct Quad2dTexture {
-    pub(crate) texture_id: texture::Id,
-    pub(crate) texture_rect: texture::Rect,
 }

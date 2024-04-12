@@ -9,6 +9,7 @@ use crate::commands::CommandQueue;
 use crate::{query, ComponentStores, Storage};
 
 pub mod stages {
+    pub struct StartFrame;
     pub struct Update;
     pub struct Render;
     pub struct FinalizeRender;
@@ -23,6 +24,7 @@ impl Schedule {
     #[must_use]
     pub fn new() -> Self {
         let stages = vec![
+            TypeId::of::<stages::StartFrame>(),
             TypeId::of::<stages::Update>(),
             TypeId::of::<stages::Render>(),
             TypeId::of::<stages::FinalizeRender>(),

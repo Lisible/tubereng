@@ -1,5 +1,6 @@
 #![warn(clippy::pedantic)]
 
+use log::warn;
 use std::{any::Any, hash::Hasher, marker::PhantomData, path::PathBuf};
 
 use vfs::VirtualFileSystem;
@@ -87,15 +88,18 @@ impl AssetStore {
     where
         A: 'static + Asset,
     {
-        let mut resolved_asset_path = if let Ok(manifest_path) = std::env::var("CARGO_MANIFEST_DIR")
+        let mut resolved_asset_path = PathBuf::new();
+        #[cfg(not(target_arch = "wasm32"))]
         {
-            PathBuf::from(manifest_path)
-        } else {
-            let mut path =
-                std::env::current_exe().map_err(AssetError::ExecutablePathAcquisitionFailed)?;
-            path.pop();
-            path
-        };
+            if let Ok(manifest_path) = std::env::var("CARGO_MANIFEST_DIR") {
+                PathBuf::from(manifest_path)
+            } else {
+                let mut path =
+                    std::env::current_exe().map_err(AssetError::ExecutablePathAcquisitionFailed)?;
+                path.pop();
+                path
+            };
+        }
 
         resolved_asset_path.push("assets/");
         resolved_asset_path.push(asset_path);

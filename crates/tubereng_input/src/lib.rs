@@ -36,7 +36,7 @@ impl InputState {
             Input::KeyDown(key) => self.keyboard.on_key_down(*key),
             Input::KeyUp(key) => self.keyboard.on_key_up(*key),
             Input::MouseMotion(motion) => self.mouse.on_motion(*motion),
-            Input::CursorMoved(_) => {}
+            Input::CursorMoved(position) => self.mouse.on_move(*position),
         }
     }
 }
@@ -59,6 +59,7 @@ pub mod mouse {
     pub struct State {
         pub(super) button_state: [ButtonState; BUTTON_COUNT],
         last_motion: (f64, f64),
+        position: (f64, f64),
     }
 
     impl State {
@@ -67,6 +68,7 @@ pub mod mouse {
             Self {
                 button_state: [ButtonState::default(); BUTTON_COUNT],
                 last_motion: (0.0, 0.0),
+                position: (0.0, 0.0),
             }
         }
 
@@ -75,8 +77,17 @@ pub mod mouse {
             &self.last_motion
         }
 
+        #[must_use]
+        pub fn position(&self) -> &(f64, f64) {
+            &self.position
+        }
+
         pub(crate) fn on_motion(&mut self, motion: (f64, f64)) {
             self.last_motion = motion;
+        }
+
+        pub(crate) fn on_move(&mut self, position: (f64, f64)) {
+            self.position = position;
         }
 
         #[must_use]

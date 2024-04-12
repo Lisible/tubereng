@@ -1,4 +1,4 @@
-use std::{any::Any, cell::RefCell, marker::PhantomData, vec::IntoIter};
+use std::{cell::RefCell, marker::PhantomData, vec::IntoIter};
 
 use crate::{
     system::{self, System},
