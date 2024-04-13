@@ -1,11 +1,20 @@
 use std::collections::HashMap;
 
 use tubereng_core::Transform;
-use tubereng_ecs::Storage;
+use tubereng_ecs::{
+    system::{Res, ResMut, Q},
+    Storage,
+};
 use tubereng_math::vector::Vector3f;
 use wgpu::include_wgsl;
 
-use crate::{mesh::Vertex, render_graph::RenderPass, sprite::Sprite, texture, GraphicsState};
+use crate::{
+    camera,
+    mesh::Vertex,
+    render_graph::{RenderGraph, RenderPass},
+    sprite::Sprite,
+    texture, GraphicsState,
+};
 
 struct Quad2d {
     pub(crate) transform: Transform,
@@ -32,10 +41,18 @@ struct BatchMetadata {
     texture_id: texture::Id,
 }
 
+#[repr(C)]
+#[derive(bytemuck::Pod, bytemuck::Zeroable, Clone, Copy)]
+pub struct PassUniform {
+    view_proj: [[f32; 4]; 4],
+}
+
 pub struct Pass {
     pipeline: wgpu::RenderPipeline,
     pending_batches: Vec<PendingBatch>,
     batches_metadata: Vec<BatchMetadata>,
+    pass_uniform_buffer: wgpu::Buffer,
+    pass_uniform_bind_group: wgpu::BindGroup,
     texture_bind_group_layout: wgpu::BindGroupLayout,
     texture_bind_groups: HashMap<texture::Id, wgpu::BindGroup>,
     vertex_buffer: wgpu::Buffer,
@@ -73,9 +90,41 @@ impl Pass {
                     },
                 ],
             });
+
+        let pass_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("pass_uniform"),
+            size: std::mem::size_of::<PassUniform>() as wgpu::BufferAddress,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let pass_uniform_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("pass_uniform_bind_group_layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            });
+
+        let pass_uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("pass_uniform_bind_group"),
+            layout: &pass_uniform_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: pass_uniform_buffer.as_entire_binding(),
+            }],
+        });
+
         let pipeline = Self::create_pass_2d_pipeline(
             device,
-            &[&texture_bind_group_layout],
+            &[&pass_uniform_bind_group_layout, &texture_bind_group_layout],
             surface_texture_format,
         );
 
@@ -86,22 +135,32 @@ impl Pass {
             texture_bind_groups: HashMap::new(),
             vertex_buffer,
             pipeline,
+            pass_uniform_buffer,
+            pass_uniform_bind_group,
         }
     }
 
     fn queue_quad_2d(&mut self, quad: &Quad2d, texture_info: &texture::Info) {
         let local_to_world_matrix = quad.transform.as_matrix4();
+
+        let texture_w = texture_info.width as f32;
+        let texture_h = texture_info.height as f32;
+        let quad_texture_u = quad.texture_rect.x;
+        let quad_texture_v = quad.texture_rect.y;
+        let quad_texture_w = quad.texture_rect.width;
+        let quad_texture_h = quad.texture_rect.height;
+
         let top_left = local_to_world_matrix
             .transform_vec3(&Vector3f::new(0.0, 0.0, 0.0))
             .into();
         let bottom_left = local_to_world_matrix
-            .transform_vec3(&Vector3f::new(0.0, 1.0, 0.0))
+            .transform_vec3(&Vector3f::new(0.0, quad_texture_h, 0.0))
             .into();
         let bottom_right = local_to_world_matrix
-            .transform_vec3(&Vector3f::new(1.0, 1.0, 0.0))
+            .transform_vec3(&Vector3f::new(quad_texture_w, quad_texture_h, 0.0))
             .into();
         let top_right = local_to_world_matrix
-            .transform_vec3(&Vector3f::new(1.0, 0.0, 0.0))
+            .transform_vec3(&Vector3f::new(quad_texture_w, 0.0, 0.0))
             .into();
         let texture_id = quad.texture_id;
 
@@ -118,51 +177,39 @@ impl Pass {
         batch.vertices.extend_from_slice(&[
             Vertex {
                 position: top_left,
-                texture_coordinates: [
-                    quad.texture_rect.x as f32 / texture_info.width as f32,
-                    (quad.texture_rect.y + quad.texture_rect.height) as f32
-                        / texture_info.height as f32,
-                ],
+                texture_coordinates: [quad_texture_u / texture_w, quad_texture_v / texture_h],
             },
             Vertex {
                 position: bottom_left,
                 texture_coordinates: [
-                    quad.texture_rect.x as f32 / texture_info.width as f32,
-                    quad.texture_rect.y as f32 / texture_info.height as f32,
+                    quad_texture_u / texture_w,
+                    (quad_texture_v + quad_texture_h) / texture_h,
                 ],
             },
             Vertex {
                 position: bottom_right,
                 texture_coordinates: [
-                    (quad.texture_rect.x + quad.texture_rect.width) as f32
-                        / texture_info.width as f32,
-                    quad.texture_rect.y as f32 / texture_info.height as f32,
+                    (quad_texture_u + quad_texture_w) / texture_w,
+                    (quad_texture_v + quad_texture_h) / texture_h,
                 ],
             },
             Vertex {
                 position: bottom_right,
                 texture_coordinates: [
-                    (quad.texture_rect.x + quad.texture_rect.width) as f32
-                        / texture_info.width as f32,
-                    quad.texture_rect.y as f32 / texture_info.height as f32,
+                    (quad_texture_u + quad_texture_w) / texture_w,
+                    (quad_texture_v + quad_texture_h) / texture_h,
                 ],
             },
             Vertex {
                 position: top_right,
                 texture_coordinates: [
-                    (quad.texture_rect.x + quad.texture_rect.width) as f32
-                        / texture_info.width as f32,
-                    (quad.texture_rect.y + quad.texture_rect.height) as f32
-                        / texture_info.height as f32,
+                    (quad_texture_u + quad_texture_w) / texture_w,
+                    quad_texture_v / texture_h,
                 ],
             },
             Vertex {
                 position: top_left,
-                texture_coordinates: [
-                    quad.texture_rect.x as f32 / texture_info.width as f32,
-                    (quad.texture_rect.y + quad.texture_rect.height) as f32
-                        / texture_info.height as f32,
-                ],
+                texture_coordinates: [quad_texture_u / texture_w, quad_texture_v / texture_h],
             },
         ]);
     }
@@ -231,6 +278,20 @@ impl RenderPass for Pass {
             .resource::<GraphicsState>()
             .expect("Graphics state should be present");
 
+        let (camera, _) = storage
+            .query::<(&camera::D2, &camera::Active)>()
+            .iter()
+            .next()
+            .expect("An active 2d camera should be present in the scene");
+
+        gfx.queue().write_buffer(
+            &self.pass_uniform_buffer,
+            0,
+            bytemuck::cast_slice(&[PassUniform {
+                view_proj: camera.projection().clone().into(),
+            }]),
+        );
+
         for (sprite, transform) in storage.query::<(&Sprite, &Transform)>().iter() {
             // TODO move that code into a separate function
             if let std::collections::hash_map::Entry::Vacant(e) =
@@ -274,10 +335,10 @@ impl RenderPass for Pass {
                     transform: transform.clone(),
                     texture_id: sprite.texture,
                     texture_rect: sprite.texture_rect.clone().unwrap_or(texture::Rect {
-                        x: 0,
-                        y: 0,
-                        width: texture_info.width,
-                        height: texture_info.height,
+                        x: 0.0,
+                        y: 0.0,
+                        width: texture_info.width as f32,
+                        height: texture_info.height as f32,
                     }),
                 },
                 texture_info,
@@ -327,11 +388,29 @@ impl RenderPass for Pass {
         });
 
         rpass.set_pipeline(&self.pipeline);
+        rpass.set_bind_group(0, &self.pass_uniform_bind_group, &[]);
         for batch in &self.batches_metadata {
             rpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             let texture_bind_group = &self.texture_bind_groups[&batch.texture_id];
-            rpass.set_bind_group(0, texture_bind_group, &[]);
+            rpass.set_bind_group(1, texture_bind_group, &[]);
             rpass.draw(batch.start_vertex_index..batch.end_vertex_index, 0..1);
         }
     }
+}
+
+pub(crate) fn add_pass_system(
+    gfx: Res<GraphicsState>,
+    mut graph: ResMut<RenderGraph>,
+    mut query_camera: Q<(&camera::D2, &camera::Active)>,
+) {
+    // Don't add a 2D pass if there is no 2D camera in the scene
+    if query_camera.iter().next().is_none() {
+        return;
+    }
+
+    graph.add_pass(Pass::new(
+        &gfx.wgpu_state.device,
+        gfx.surface_texture_format(),
+    ));
+    std::mem::drop(gfx);
 }

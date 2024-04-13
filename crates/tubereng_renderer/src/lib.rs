@@ -10,6 +10,7 @@ use tubereng_ecs::{
 };
 use wgpu::SurfaceTargetUnsafe;
 
+pub mod camera;
 pub mod material;
 mod mesh;
 mod pass_2d;
@@ -296,10 +297,10 @@ pub async fn renderer_init<W>(
     let placeholder_material_id = gfx.load_material(&material::Descriptor {
         base_color: placeholder_texture_id,
         region: texture::Rect {
-            x: 0,
-            y: 0,
-            width: 16,
-            height: 16,
+            x: 0.0,
+            y: 0.0,
+            width: 16.0,
+            height: 16.0,
         },
     });
     gfx.placeholder_material_id = Some(placeholder_material_id);
@@ -314,7 +315,7 @@ pub async fn renderer_init<W>(
 
     ecs.register_system(&stages::Render, begin_frame_system);
     ecs.register_system(&stages::Render, add_clear_pass_system);
-    ecs.register_system(&stages::Render, add_draw_triangle_pass_system);
+    ecs.register_system(&stages::Render, pass_2d::add_pass_system);
     ecs.register_system(&stages::FinalizeRender, prepare_passes_system);
     ecs.register_system(&stages::FinalizeRender, finish_frame_system);
 }
@@ -375,14 +376,6 @@ fn finish_frame_system(
 
 fn add_clear_pass_system(mut graph: ResMut<RenderGraph>) {
     graph.add_pass(ClearPass);
-}
-
-fn add_draw_triangle_pass_system(gfx: Res<GraphicsState>, mut graph: ResMut<RenderGraph>) {
-    graph.add_pass(pass_2d::Pass::new(
-        &gfx.wgpu_state.device,
-        gfx.surface_texture_format(),
-    ));
-    std::mem::drop(gfx);
 }
 
 pub struct ClearPass;
