@@ -51,7 +51,9 @@ pub struct Pass {
     pipeline: wgpu::RenderPipeline,
     pending_batches: Vec<PendingBatch>,
     batches_metadata: Vec<BatchMetadata>,
+    #[allow(clippy::struct_field_names)]
     pass_uniform_buffer: wgpu::Buffer,
+    #[allow(clippy::struct_field_names)]
     pass_uniform_bind_group: wgpu::BindGroup,
     texture_bind_group_layout: wgpu::BindGroupLayout,
     texture_bind_groups: HashMap<texture::Id, wgpu::BindGroup>,
@@ -140,6 +142,7 @@ impl Pass {
         }
     }
 
+    #[allow(clippy::cast_precision_loss)]
     fn queue_quad_2d(&mut self, quad: &Quad2d, texture_info: &texture::Info) {
         let local_to_world_matrix = quad.transform.as_matrix4();
 
@@ -288,7 +291,7 @@ impl RenderPass for Pass {
             &self.pass_uniform_buffer,
             0,
             bytemuck::cast_slice(&[PassUniform {
-                view_proj: camera.projection().clone().into(),
+                view_proj: (*camera.projection()).into(),
             }]),
         );
 
@@ -330,6 +333,7 @@ impl RenderPass for Pass {
             }
 
             let texture_info = gfx.texture_cache.info(sprite.texture);
+            #[allow(clippy::cast_precision_loss)]
             self.queue_quad_2d(
                 &Quad2d {
                     transform: transform.clone(),
