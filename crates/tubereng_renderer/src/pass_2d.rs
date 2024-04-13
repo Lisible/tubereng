@@ -13,7 +13,7 @@ use crate::{
     mesh::Vertex,
     render_graph::{RenderGraph, RenderPass},
     sprite::{AnimatedSprite, Sprite},
-    texture, GraphicsState,
+    texture, GraphicsState, PipelineCache,
 };
 
 struct Quad2d {
@@ -48,11 +48,12 @@ pub struct PassUniform {
 }
 
 pub struct Pass {
-    pipeline: wgpu::RenderPipeline,
     pending_batches: Vec<PendingBatch>,
     batches_metadata: Vec<BatchMetadata>,
     #[allow(clippy::struct_field_names)]
     pass_uniform_buffer: wgpu::Buffer,
+    #[allow(clippy::struct_field_names)]
+    pass_uniform_bind_group_layout: wgpu::BindGroupLayout,
     #[allow(clippy::struct_field_names)]
     pass_uniform_bind_group: wgpu::BindGroup,
     texture_bind_group_layout: wgpu::BindGroupLayout,
@@ -124,21 +125,15 @@ impl Pass {
             }],
         });
 
-        let pipeline = Self::create_pass_2d_pipeline(
-            device,
-            &[&pass_uniform_bind_group_layout, &texture_bind_group_layout],
-            surface_texture_format,
-        );
-
         Self {
             pending_batches: vec![],
             batches_metadata: vec![],
             texture_bind_group_layout,
             texture_bind_groups: HashMap::new(),
             vertex_buffer,
-            pipeline,
             pass_uniform_buffer,
             pass_uniform_bind_group,
+            pass_uniform_bind_group_layout,
         }
     }
 
@@ -397,11 +392,25 @@ impl RenderPass for Pass {
 
     fn execute(
         &self,
-        _gfx: &mut GraphicsState,
+        gfx: &mut GraphicsState,
         encoder: &mut wgpu::CommandEncoder,
         surface_texture_view: &wgpu::TextureView,
-        _storage: &Storage,
+        storage: &Storage,
     ) {
+        let mut pipeline_cache = storage.resource_mut::<PipelineCache>().unwrap();
+        if !pipeline_cache.has("pass_2d_pipeline") {
+            pipeline_cache.insert(
+                "pass_2d_pipeline",
+                Self::create_pass_2d_pipeline(
+                    gfx.device(),
+                    &[
+                        &self.pass_uniform_bind_group_layout,
+                        &self.texture_bind_group_layout,
+                    ],
+                    gfx.surface_texture_format(),
+                ),
+            );
+        }
         let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("pass_2d"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -417,7 +426,7 @@ impl RenderPass for Pass {
             occlusion_query_set: None,
         });
 
-        rpass.set_pipeline(&self.pipeline);
+        rpass.set_pipeline(pipeline_cache.get("pass_2d_pipeline").unwrap());
         rpass.set_bind_group(0, &self.pass_uniform_bind_group, &[]);
         for batch in &self.batches_metadata {
             rpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));

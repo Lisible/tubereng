@@ -1,6 +1,6 @@
 #![warn(clippy::pedantic)]
 
-use std::{borrow::BorrowMut, sync::Arc};
+use std::{borrow::BorrowMut, collections::HashMap, sync::Arc};
 
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawWindowHandle};
 use render_graph::{RenderGraph, RenderPass};
@@ -279,6 +279,26 @@ impl<'w> GraphicsState<'w> {
     }
 }
 
+#[derive(Default)]
+pub struct PipelineCache {
+    pipelines: HashMap<String, wgpu::RenderPipeline>,
+}
+
+impl PipelineCache {
+    pub fn insert(&mut self, identifier: &str, pipeline: wgpu::RenderPipeline) {
+        self.pipelines.insert(identifier.to_string(), pipeline);
+    }
+
+    pub fn has(&self, identifier: &str) -> bool {
+        self.pipelines.contains_key(identifier)
+    }
+
+    #[must_use]
+    pub fn get(&self, identifier: &str) -> Option<&wgpu::RenderPipeline> {
+        self.pipelines.get(identifier)
+    }
+}
+
 pub struct FrameRenderingContext {
     pub surface_texture: Option<wgpu::SurfaceTexture>,
     pub surface_texture_view: Option<wgpu::TextureView>,
@@ -307,12 +327,14 @@ pub async fn renderer_init<W>(
 
     ecs.insert_resource(gfx);
     ecs.insert_resource(RenderGraph::new());
+    ecs.insert_resource(PipelineCache::default());
     ecs.insert_resource(FrameRenderingContext {
         surface_texture: None,
         surface_texture_view: None,
         encoder: None,
     });
 
+    ecs.register_system(&stages::Update, sprite::animate_sprite_system);
     ecs.register_system(&stages::Render, begin_frame_system);
     ecs.register_system(&stages::Render, add_clear_pass_system);
     ecs.register_system(&stages::Render, pass_2d::add_pass_system);
