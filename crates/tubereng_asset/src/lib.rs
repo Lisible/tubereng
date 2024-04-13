@@ -99,9 +99,9 @@ impl AssetStore {
                 path.pop();
                 path
             };
+            resolved_asset_path.push("assets/");
         }
 
-        resolved_asset_path.push("assets/");
         resolved_asset_path.push(asset_path);
         let bytes = self.fs.read_bytes(
             resolved_asset_path
