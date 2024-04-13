@@ -19,3 +19,4 @@ web-sys = { version = "0.3", features = [
     "Window",
     "Element",
 ]}
+web-time = "1.1"
