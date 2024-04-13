@@ -6,6 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+tubereng_core = { path = "../tubereng_core" }
 tubereng_ecs = { path = "../tubereng_ecs" }
 tubereng_input = { path = "../tubereng_input" }
 tubereng_asset = { path = "../tubereng_asset" }

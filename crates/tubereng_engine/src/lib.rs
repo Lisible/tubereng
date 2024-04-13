@@ -7,6 +7,7 @@ use tubereng_asset::AssetLoader;
 use tubereng_asset::AssetStore;
 
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
+use tubereng_core::DeltaTime;
 use tubereng_image::ImageLoader;
 use tubereng_input::{Input, InputState};
 
@@ -50,12 +51,12 @@ impl Engine {
     }
 
     /// Updates the state of the engine
-    pub fn update(&mut self) {
+    pub fn update(&mut self, delta_time: f32) {
+        self.ecs.insert_resource(DeltaTime(delta_time));
         if !self.init_system_ran {
             self.ecs.run_single_run_system(&self.init_system);
             self.init_system_ran = true;
         }
-
         self.ecs.run_systems();
     }
 

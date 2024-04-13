@@ -56,6 +56,7 @@ impl WinitTuberRunner {
         }
         engine.init_graphics(window.clone()).await;
         event_loop.set_control_flow(ControlFlow::Poll);
+        let mut last_frame_start_instant = Instant::now();
         event_loop
             .run(move |event, elwt| match event {
                 Event::WindowEvent {
@@ -63,9 +64,6 @@ impl WinitTuberRunner {
                     ..
                 } => {
                     elwt.exit();
-                }
-                Event::AboutToWait => {
-                    engine.update();
                 }
                 Event::DeviceEvent {
                     event: DeviceEvent::MouseMotion { delta },
@@ -79,6 +77,16 @@ impl WinitTuberRunner {
                         },
                     ..
                 } => engine.on_input(Input::CursorMoved((x, y))),
+                Event::WindowEvent {
+                    event: WindowEvent::RedrawRequested,
+                    ..
+                } => {
+                    window.request_redraw();
+                    let frame_start_instant = Instant::now();
+                    let delta_time = (frame_start_instant - last_frame_start_instant).as_secs_f32();
+                    engine.update(delta_time);
+                    last_frame_start_instant = frame_start_instant;
+                }
                 Event::WindowEvent {
                     event: WindowEvent::MouseInput { state, button, .. },
                     ..
