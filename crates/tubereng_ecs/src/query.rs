@@ -126,12 +126,12 @@ where
 
         while fetched.is_none() {
             self.current_entity_index += 1;
-            if self.deleted_entities.contains(&self.current_entity_index) {
-                continue;
-            }
-
             if self.current_entity_index > self.max_entity_index {
                 return None;
+            }
+
+            if self.deleted_entities.contains(&self.current_entity_index) {
+                continue;
             }
 
             fetched = QD::fetch(self.component_stores, self.current_entity_index);

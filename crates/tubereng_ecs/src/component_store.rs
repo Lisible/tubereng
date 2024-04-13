@@ -7,10 +7,11 @@ pub struct ComponentStore {
     data: UnsafeCell<NonNull<u8>>,
     cap: usize,
     entities_bitset: [u8; MAX_ENTITY_COUNT / 8],
+    drop_fn: unsafe fn(*mut u8),
 }
 
 impl ComponentStore {
-    pub fn new(component_layout: Layout) -> Self {
+    pub fn new(component_layout: Layout, drop_fn: unsafe fn(*mut u8)) -> Self {
         // In the case of ZSTs we don't want to allocate any data. To avoid any
         // allocation, we consider the component store to have the maximum
         // capacity
@@ -25,6 +26,7 @@ impl ComponentStore {
             data: UnsafeCell::new(NonNull::dangling()),
             cap,
             entities_bitset: [0u8; MAX_ENTITY_COUNT / 8],
+            drop_fn,
         }
     }
 
@@ -40,14 +42,20 @@ impl ComponentStore {
             unsafe {
                 self.write(entity_id, std::ptr::addr_of_mut!(component).cast());
             }
+
+            std::mem::forget(component);
         }
     }
 
     pub fn delete(&mut self, entity_id: EntityId) {
-        if entity_id >= MAX_ENTITY_COUNT {
+        if entity_id >= self.cap || !self.entities_bitset.bit(entity_id) {
             return;
         }
+
         self.entities_bitset.unset_bit(entity_id);
+        unsafe {
+            (self.drop_fn)(self.ptr_at(entity_id));
+        }
     }
 
     pub fn get<C>(&self, entity_id: EntityId) -> Option<&C> {
@@ -155,6 +163,14 @@ impl ComponentStore {
             UnsafeCell::new(NonNull::new(new_data).expect("ComponentStore data allocation failed"));
     }
 
+    pub fn clear(&mut self) {
+        for i in 0..self.cap {
+            if self.entities_bitset.bit(i) {
+                self.delete(i);
+            }
+        }
+    }
+
     const fn max_size_for_align(align: usize) -> usize {
         isize::MAX as usize - (align - 1)
     }
@@ -166,6 +182,7 @@ impl Drop for ComponentStore {
             return;
         }
 
+        self.clear();
         let array_size = self.cap * self.component_layout.size();
         let layout = Layout::from_size_align(array_size, self.component_layout.align()).unwrap();
 
@@ -179,6 +196,10 @@ impl Drop for ComponentStore {
     }
 }
 
+pub unsafe fn drop_fn_of<T>(ptr: *mut u8) {
+    ptr.cast::<T>().drop_in_place();
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -190,7 +211,7 @@ mod tests {
 
     #[test]
     fn component_store_store() {
-        let mut store = ComponentStore::new(Layout::new::<Position>());
+        let mut store = ComponentStore::new(Layout::new::<Position>(), drop_fn_of::<Position>);
         store.store(5, Position { x: 23, y: 12 });
         assert_eq!(store.cap, 6);
         store.store(2, Position { x: 43, y: 45 });
@@ -199,7 +220,7 @@ mod tests {
 
     #[test]
     fn component_store_get() {
-        let mut store = ComponentStore::new(Layout::new::<Position>());
+        let mut store = ComponentStore::new(Layout::new::<Position>(), drop_fn_of::<Position>);
         store.store(5, Position { x: 23, y: 12 });
         store.store(2, Position { x: 11, y: 33 });
 
@@ -214,7 +235,7 @@ mod tests {
 
     #[test]
     fn component_store_get_mut() {
-        let mut store = ComponentStore::new(Layout::new::<Position>());
+        let mut store = ComponentStore::new(Layout::new::<Position>(), drop_fn_of::<Position>);
         store.store(5, Position { x: 23, y: 12 });
         store.store(2, Position { x: 11, y: 33 });
 

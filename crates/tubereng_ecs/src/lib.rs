@@ -9,7 +9,7 @@ use std::{
 };
 
 use commands::CommandQueue;
-use component_store::ComponentStore;
+use component_store::{drop_fn_of, ComponentStore};
 
 mod bitset;
 pub mod commands;
@@ -29,7 +29,14 @@ pub struct Storage {
     resources: Resources,
 }
 
+impl Default for Storage {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Storage {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             next_entity_id: 0,
@@ -69,6 +76,7 @@ impl Storage {
             .insert(TypeId::of::<R>(), RefCell::new(Box::new(resource)));
     }
 
+    #[must_use]
     pub fn resource<R: Any>(&self) -> Option<Ref<'_, R>> {
         Some(Ref::map(
             self.resources.get(&TypeId::of::<R>())?.borrow(),
@@ -76,6 +84,7 @@ impl Storage {
         ))
     }
 
+    #[must_use]
     pub fn resource_mut<R: Any>(&self) -> Option<RefMut<'_, R>> {
         Some(RefMut::map(
             self.resources.get(&TypeId::of::<R>())?.borrow_mut(),
@@ -331,11 +340,11 @@ macro_rules! impl_entity_definition_for_tuple {
             ) {
                 component_stores
                     .entry(TypeId::of::<$head>())
-                    .or_insert_with(|| ComponentStore::new(Layout::new::<$head>()))
+                    .or_insert_with(|| ComponentStore::new(Layout::new::<$head>(), drop_fn_of::<$head>))
                     .store(entity_id, self.$head_i);
                 $(component_stores
                     .entry(TypeId::of::<$tail>())
-                    .or_insert_with(|| ComponentStore::new(Layout::new::<$tail>()))
+                    .or_insert_with(|| ComponentStore::new(Layout::new::<$tail>(), drop_fn_of::<$tail>))
                     .store(entity_id, self.$tail_i);)*
             }
         }
