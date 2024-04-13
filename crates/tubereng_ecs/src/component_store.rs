@@ -43,7 +43,18 @@ impl ComponentStore {
         }
     }
 
+    pub fn delete(&mut self, entity_id: EntityId) {
+        if entity_id >= MAX_ENTITY_COUNT {
+            return;
+        }
+        self.entities_bitset.unset_bit(entity_id);
+    }
+
     pub fn get<C>(&self, entity_id: EntityId) -> Option<&C> {
+        if entity_id >= MAX_ENTITY_COUNT {
+            return None;
+        }
+
         if entity_id >= self.cap {
             return None;
         }
@@ -64,6 +75,10 @@ impl ComponentStore {
     }
 
     pub fn get_mut<C>(&self, entity_id: EntityId) -> Option<&mut C> {
+        if entity_id >= MAX_ENTITY_COUNT {
+            return None;
+        }
+
         if entity_id >= self.cap {
             return None;
         }

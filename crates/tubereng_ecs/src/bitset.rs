@@ -1,5 +1,6 @@
 pub trait BitSet {
     fn set_bit(&mut self, bit: usize);
+    fn unset_bit(&mut self, bit: usize);
     fn bit(&self, bit: usize) -> bool;
 }
 
@@ -8,6 +9,12 @@ impl BitSet for [u8] {
         let byte = bit >> 3;
         let bit = bit & 7;
         self[byte] |= 1 << bit;
+    }
+
+    fn unset_bit(&mut self, bit: usize) {
+        let byte = bit >> 3;
+        let bit = bit & 7;
+        self[byte] &= !(1 << bit);
     }
 
     fn bit(&self, bit: usize) -> bool {

@@ -24,6 +24,7 @@ pub type Resources = HashMap<TypeId, RefCell<Box<dyn Any>>>;
 const MAX_ENTITY_COUNT: usize = 1024;
 pub struct Storage {
     next_entity_id: EntityId,
+    deleted_entities: Vec<EntityId>,
     component_stores: ComponentStores,
     resources: Resources,
 }
@@ -32,13 +33,15 @@ impl Storage {
     pub fn new() -> Self {
         Self {
             next_entity_id: 0,
+            deleted_entities: vec![],
             component_stores: ComponentStores::new(),
             resources: Resources::new(),
         }
     }
 
+    #[must_use]
     pub fn entity_count(&self) -> usize {
-        self.next_entity_id
+        self.next_entity_id - self.deleted_entities.len()
     }
 
     pub fn insert<ED>(&mut self, entity_definition: ED) -> EntityId
@@ -49,6 +52,13 @@ impl Storage {
         trace!("Inserting entity {entity_id} with definition {entity_definition:?}");
         entity_definition.write_into_component_stores(entity_id, &mut self.component_stores);
         entity_id
+    }
+
+    pub fn delete(&mut self, entity_id: EntityId) {
+        for component_store in self.component_stores.values_mut() {
+            component_store.delete(entity_id);
+        }
+        self.deleted_entities.push(entity_id);
     }
 
     pub fn insert_resource<R>(&mut self, resource: R)
@@ -78,6 +88,10 @@ impl Storage {
     where
         C: 'static,
     {
+        if self.deleted_entities.contains(&entity_id) {
+            return None;
+        }
+
         self.component_stores
             .get(&TypeId::of::<C>())?
             .get(entity_id)
@@ -88,6 +102,10 @@ impl Storage {
     where
         C: 'static,
     {
+        if self.deleted_entities.contains(&entity_id) {
+            return None;
+        }
+
         self.component_stores
             .get(&TypeId::of::<C>())?
             .get_mut(entity_id)
@@ -98,10 +116,18 @@ impl Storage {
     where
         QD: query::Definition,
     {
-        query::State::new(&self.component_stores, self.entity_count())
+        query::State::new(
+            &self.component_stores,
+            &self.deleted_entities,
+            self.next_entity_id - 1,
+        )
     }
 
     fn allocate_entity(&mut self) -> EntityId {
+        if let Some(entity_id) = self.deleted_entities.pop() {
+            return entity_id;
+        }
+
         let entity_id = self.next_entity_id;
         self.next_entity_id += 1;
         entity_id
@@ -135,6 +161,11 @@ impl Ecs {
         ED: EntityDefinition,
     {
         self.storage.insert(entity_definition)
+    }
+
+    /// Deletes the entity with the given id
+    pub fn delete(&mut self, entity_id: EntityId) {
+        self.storage.delete(entity_id);
     }
 
     /// Inserts a resource into the Ecs, replaces it if already present

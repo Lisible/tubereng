@@ -30,7 +30,8 @@ where
     QD: Definition,
 {
     component_stores: &'w ComponentStores,
-    entity_count: usize,
+    deleted_entities: &'w [EntityId],
+    max_entity_index: usize,
     _accesses: ComponentAccesses,
     _marker: PhantomData<QD>,
 }
@@ -40,23 +41,38 @@ where
     QD: Definition,
 {
     #[must_use]
-    pub fn new(component_stores: &'w ComponentStores, entity_count: usize) -> Self {
+    pub fn new(
+        component_stores: &'w ComponentStores,
+        deleted_entities: &'w [EntityId],
+        max_entity_index: usize,
+    ) -> Self {
         let accesses = ComponentAccesses::new();
         QD::register_component_accesses(&accesses);
         Self {
             component_stores,
-            entity_count,
+            max_entity_index,
             _accesses: accesses,
             _marker: PhantomData,
+            deleted_entities,
         }
     }
 
     pub fn iter<'s>(&'s mut self) -> Iter<'w, 's, QD> {
-        Iter::new(self, self.entity_count, self.component_stores)
+        Iter::new(
+            self,
+            self.deleted_entities,
+            self.max_entity_index,
+            self.component_stores,
+        )
     }
 
     pub fn iter_with_ids<'s>(&'s mut self) -> IterWithIds<'w, 's, QD> {
-        IterWithIds::new(self, self.entity_count, self.component_stores)
+        IterWithIds::new(
+            self,
+            self.deleted_entities,
+            self.max_entity_index,
+            self.component_stores,
+        )
     }
 }
 
@@ -65,7 +81,8 @@ where
     QD: Definition,
 {
     _query_state: &'s State<'w, QD>,
-    entity_count: usize,
+    max_entity_index: usize,
+    deleted_entities: &'w [EntityId],
     component_stores: &'w ComponentStores,
     current_entity_index: usize,
 }
@@ -77,14 +94,16 @@ where
     #[must_use]
     pub fn new(
         query_state: &'s State<'w, QD>,
-        entity_count: usize,
+        deleted_entities: &'w [EntityId],
+        max_entity_index: usize,
         component_stores: &'w ComponentStores,
     ) -> Self {
         Self {
             _query_state: query_state,
-            entity_count,
+            max_entity_index,
             component_stores,
             current_entity_index: 0,
+            deleted_entities,
         }
     }
 }
@@ -96,14 +115,22 @@ where
     type Item = (EntityId, QD::Item<'w>);
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.current_entity_index >= self.entity_count {
+        if self.current_entity_index > self.max_entity_index {
             return None;
         }
 
-        let mut fetched = QD::fetch(self.component_stores, self.current_entity_index);
+        let mut fetched = None;
+        if !self.deleted_entities.contains(&self.current_entity_index) {
+            fetched = QD::fetch(self.component_stores, self.current_entity_index);
+        }
+
         while fetched.is_none() {
             self.current_entity_index += 1;
-            if self.current_entity_index >= self.entity_count {
+            if self.deleted_entities.contains(&self.current_entity_index) {
+                continue;
+            }
+
+            if self.current_entity_index > self.max_entity_index {
                 return None;
             }
 
@@ -130,11 +157,17 @@ where
     #[must_use]
     pub fn new(
         query_state: &'s State<'w, QD>,
+        deleted_entities: &'w [EntityId],
         entity_count: usize,
         component_stores: &'w ComponentStores,
     ) -> Self {
         Self {
-            inner: IterWithIds::new(query_state, entity_count, component_stores),
+            inner: IterWithIds::new(
+                query_state,
+                deleted_entities,
+                entity_count,
+                component_stores,
+            ),
         }
     }
 }

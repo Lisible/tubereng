@@ -2,7 +2,7 @@ use std::{cell::RefCell, marker::PhantomData, vec::IntoIter};
 
 use crate::{
     system::{self, System},
-    Ecs, EntityDefinition,
+    Ecs, EntityDefinition, EntityId,
 };
 
 pub struct CommandQueue(RefCell<Vec<Box<dyn Command>>>);
@@ -17,6 +17,10 @@ impl CommandQueue {
         ED: 'static + EntityDefinition,
     {
         self.push_command(InsertEntity::new(entity_definition));
+    }
+
+    pub fn delete(&self, entity_id: EntityId) {
+        self.push_command(DeleteEntity::new(entity_id));
     }
 
     pub fn insert_resource<R>(&self, resource: R)
@@ -79,6 +83,22 @@ impl Command for InsertEntity {
     fn apply(&mut self, ecs: &mut Ecs) {
         let boxed_ed = self.entity_definition.take().unwrap();
         ecs.insert(boxed_ed);
+    }
+}
+
+pub struct DeleteEntity {
+    entity_id: EntityId,
+}
+
+impl DeleteEntity {
+    pub fn new(entity_id: EntityId) -> Self {
+        Self { entity_id }
+    }
+}
+
+impl Command for DeleteEntity {
+    fn apply(&mut self, ecs: &mut Ecs) {
+        ecs.delete(self.entity_id);
     }
 }
 

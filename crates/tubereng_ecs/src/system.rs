@@ -6,7 +6,7 @@ use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 
 use crate::commands::CommandQueue;
-use crate::{query, ComponentStores, Storage};
+use crate::{query, ComponentStores, EntityId, Storage};
 
 pub mod stages {
     pub struct StartFrame;
@@ -233,8 +233,12 @@ where
     QD: query::Definition,
 {
     #[must_use]
-    pub fn new(component_stores: &'ecs ComponentStores, entity_count: usize) -> Self {
-        let state = query::State::new(component_stores, entity_count);
+    pub fn new(
+        component_stores: &'ecs ComponentStores,
+        deleted_entities: &'ecs [EntityId],
+        entity_count: usize,
+    ) -> Self {
+        let state = query::State::new(component_stores, deleted_entities, entity_count);
         Self {
             state,
             _marker: PhantomData,
@@ -262,7 +266,11 @@ where
         _command_queue: &'a CommandQueue,
         storage: &'a Storage,
     ) -> Option<Self::Type<'a>> {
-        Some(Q::new(&storage.component_stores, storage.entity_count()))
+        Some(Q::new(
+            &storage.component_stores,
+            &storage.deleted_entities,
+            storage.entity_count(),
+        ))
     }
 }
 
