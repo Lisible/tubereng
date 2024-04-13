@@ -24,6 +24,7 @@ impl Material {
 
 pub struct Descriptor {
     pub base_color: texture::Id,
+    pub region: texture::Rect,
 }
 
 pub struct Cache {

@@ -1,27 +1,27 @@
+use std::collections::HashMap;
+
 use tubereng_core::Transform;
 use tubereng_ecs::Storage;
 use tubereng_math::vector::Vector3f;
 use wgpu::include_wgsl;
 
-use crate::{
-    material, mesh::Vertex, render_graph::RenderPass, sprite::Sprite, GraphicsState,
-    RenderPipelines,
-};
+use crate::{mesh::Vertex, render_graph::RenderPass, sprite::Sprite, texture, GraphicsState};
 
-pub(crate) struct Quad2d {
+struct Quad2d {
     pub(crate) transform: Transform,
-    pub(crate) material: material::Id,
+    texture_id: texture::Id,
+    texture_rect: texture::Rect,
 }
 struct PendingBatch {
     pub(crate) vertices: Vec<Vertex>,
-    pub(crate) material_id: material::Id,
+    pub(crate) texture_id: texture::Id,
 }
 
 impl PendingBatch {
-    pub fn new(material_id: material::Id) -> Self {
+    pub fn new(texture_id: texture::Id) -> Self {
         Self {
             vertices: vec![],
-            material_id,
+            texture_id,
         }
     }
 }
@@ -29,18 +29,21 @@ impl PendingBatch {
 struct BatchMetadata {
     start_vertex_index: u32,
     end_vertex_index: u32,
-    material_id: material::Id,
+    texture_id: texture::Id,
 }
 
 pub struct Pass {
+    pipeline: wgpu::RenderPipeline,
     pending_batches: Vec<PendingBatch>,
     batches_metadata: Vec<BatchMetadata>,
+    texture_bind_group_layout: wgpu::BindGroupLayout,
+    texture_bind_groups: HashMap<texture::Id, wgpu::BindGroup>,
     vertex_buffer: wgpu::Buffer,
 }
 
 impl Pass {
     const MAX_VERTICES: usize = 10_000;
-    pub fn new(device: &wgpu::Device) -> Self {
+    pub fn new(device: &wgpu::Device, surface_texture_format: wgpu::TextureFormat) -> Self {
         let vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("pass_2d_vertex_buffer"),
             size: (Self::MAX_VERTICES * std::mem::size_of::<Vertex>()) as wgpu::BufferAddress,
@@ -48,14 +51,45 @@ impl Pass {
             mapped_at_creation: false,
         });
 
+        let texture_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("texture_bind_group_layout"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+            });
+        let pipeline = Self::create_pass_2d_pipeline(
+            device,
+            &[&texture_bind_group_layout],
+            surface_texture_format,
+        );
+
         Self {
             pending_batches: vec![],
             batches_metadata: vec![],
+            texture_bind_group_layout,
+            texture_bind_groups: HashMap::new(),
             vertex_buffer,
+            pipeline,
         }
     }
 
-    pub fn queue_quad_2d(&mut self, quad: &Quad2d) {
+    fn queue_quad_2d(&mut self, quad: &Quad2d, texture_info: &texture::Info) {
         let local_to_world_matrix = quad.transform.as_matrix4();
         let top_left = local_to_world_matrix
             .transform_vec3(&Vector3f::new(0.0, 0.0, 0.0))
@@ -69,43 +103,125 @@ impl Pass {
         let top_right = local_to_world_matrix
             .transform_vec3(&Vector3f::new(1.0, 0.0, 0.0))
             .into();
-        let material_id = quad.material;
+        let texture_id = quad.texture_id;
 
         let batch = match self.pending_batches.last_mut() {
-            Some(batch) if batch.material_id == material_id => batch,
+            Some(batch) if batch.texture_id == texture_id => batch,
             _ => {
-                self.pending_batches.push(PendingBatch::new(material_id));
+                self.pending_batches.push(PendingBatch::new(texture_id));
                 // SAFETY: We just added a batch to the pending batch list
                 unsafe { self.pending_batches.last_mut().unwrap_unchecked() }
             }
         };
 
+        #[allow(clippy::cast_precision_loss)]
         batch.vertices.extend_from_slice(&[
             Vertex {
                 position: top_left,
-                texture_coordinates: [0.0, 1.0],
+                texture_coordinates: [
+                    quad.texture_rect.x as f32 / texture_info.width as f32,
+                    (quad.texture_rect.y + quad.texture_rect.height) as f32
+                        / texture_info.height as f32,
+                ],
             },
             Vertex {
                 position: bottom_left,
-                texture_coordinates: [0.0, 0.0],
+                texture_coordinates: [
+                    quad.texture_rect.x as f32 / texture_info.width as f32,
+                    quad.texture_rect.y as f32 / texture_info.height as f32,
+                ],
             },
             Vertex {
                 position: bottom_right,
-                texture_coordinates: [1.0, 0.0],
+                texture_coordinates: [
+                    (quad.texture_rect.x + quad.texture_rect.width) as f32
+                        / texture_info.width as f32,
+                    quad.texture_rect.y as f32 / texture_info.height as f32,
+                ],
             },
             Vertex {
                 position: bottom_right,
-                texture_coordinates: [1.0, 0.0],
+                texture_coordinates: [
+                    (quad.texture_rect.x + quad.texture_rect.width) as f32
+                        / texture_info.width as f32,
+                    quad.texture_rect.y as f32 / texture_info.height as f32,
+                ],
             },
             Vertex {
                 position: top_right,
-                texture_coordinates: [1.0, 1.0],
+                texture_coordinates: [
+                    (quad.texture_rect.x + quad.texture_rect.width) as f32
+                        / texture_info.width as f32,
+                    (quad.texture_rect.y + quad.texture_rect.height) as f32
+                        / texture_info.height as f32,
+                ],
             },
             Vertex {
                 position: top_left,
-                texture_coordinates: [0.0, 1.0],
+                texture_coordinates: [
+                    quad.texture_rect.x as f32 / texture_info.width as f32,
+                    (quad.texture_rect.y + quad.texture_rect.height) as f32
+                        / texture_info.height as f32,
+                ],
             },
         ]);
+    }
+
+    pub fn create_pass_2d_pipeline(
+        device: &wgpu::Device,
+        bind_group_layouts: &[&wgpu::BindGroupLayout],
+        surface_texture_format: wgpu::TextureFormat,
+    ) -> wgpu::RenderPipeline {
+        let shader_module = device.create_shader_module(include_wgsl!("./pass_2d.wgsl"));
+
+        let render_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("pass_2d_pipeline"),
+                bind_group_layouts,
+                push_constant_ranges: &[],
+            });
+
+        device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: None,
+            layout: Some(&render_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader_module,
+                entry_point: "vs_main",
+                buffers: &[Vertex::layout()],
+            },
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: None,
+                unclipped_depth: false,
+                polygon_mode: wgpu::PolygonMode::Fill,
+                conservative: false,
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState {
+                count: 1,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader_module,
+                entry_point: "fs_main",
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: surface_texture_format,
+                    blend: Some(wgpu::BlendState {
+                        color: wgpu::BlendComponent {
+                            src_factor: wgpu::BlendFactor::SrcAlpha,
+                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                            operation: wgpu::BlendOperation::Add,
+                        },
+                        alpha: wgpu::BlendComponent::default(),
+                    }),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            multiview: None,
+        })
     }
 }
 
@@ -116,12 +232,56 @@ impl RenderPass for Pass {
             .expect("Graphics state should be present");
 
         for (sprite, transform) in storage.query::<(&Sprite, &Transform)>().iter() {
-            self.queue_quad_2d(&Quad2d {
-                transform: transform.clone(),
-                material: sprite
-                    .material
-                    .unwrap_or(gfx.placeholder_material_id.unwrap()),
-            });
+            // TODO move that code into a separate function
+            if let std::collections::hash_map::Entry::Vacant(e) =
+                self.texture_bind_groups.entry(sprite.texture)
+            {
+                let texture = gfx.texture_cache.get(sprite.texture);
+                let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+                let texture_sampler = gfx.device().create_sampler(&wgpu::SamplerDescriptor {
+                    label: None,
+                    address_mode_u: wgpu::AddressMode::ClampToEdge,
+                    address_mode_v: wgpu::AddressMode::ClampToEdge,
+                    address_mode_w: wgpu::AddressMode::ClampToEdge,
+                    mag_filter: wgpu::FilterMode::Nearest,
+                    min_filter: wgpu::FilterMode::Nearest,
+                    mipmap_filter: wgpu::FilterMode::Linear,
+                    ..Default::default()
+                });
+
+                let texture_bind_group =
+                    gfx.device().create_bind_group(&wgpu::BindGroupDescriptor {
+                        label: None,
+                        layout: &self.texture_bind_group_layout,
+                        entries: &[
+                            wgpu::BindGroupEntry {
+                                binding: 0,
+                                resource: wgpu::BindingResource::TextureView(&texture_view),
+                            },
+                            wgpu::BindGroupEntry {
+                                binding: 1,
+                                resource: wgpu::BindingResource::Sampler(&texture_sampler),
+                            },
+                        ],
+                    });
+
+                e.insert(texture_bind_group);
+            }
+
+            let texture_info = gfx.texture_cache.info(sprite.texture);
+            self.queue_quad_2d(
+                &Quad2d {
+                    transform: transform.clone(),
+                    texture_id: sprite.texture,
+                    texture_rect: sprite.texture_rect.clone().unwrap_or(texture::Rect {
+                        x: 0,
+                        y: 0,
+                        width: texture_info.width,
+                        height: texture_info.height,
+                    }),
+                },
+                texture_info,
+            );
         }
 
         let mut vertex_count = 0u32;
@@ -139,15 +299,14 @@ impl RenderPass for Pass {
             self.batches_metadata.push(BatchMetadata {
                 start_vertex_index,
                 end_vertex_index,
-                material_id: batch.material_id,
+                texture_id: batch.texture_id,
             });
         }
     }
 
     fn execute(
         &self,
-        gfx: &mut GraphicsState,
-        pipelines: &RenderPipelines,
+        _gfx: &mut GraphicsState,
         encoder: &mut wgpu::CommandEncoder,
         surface_texture_view: &wgpu::TextureView,
         _storage: &Storage,
@@ -167,76 +326,12 @@ impl RenderPass for Pass {
             occlusion_query_set: None,
         });
 
-        let pipeline = pipelines.get("pass_2d_pipeline");
-        rpass.set_pipeline(pipeline);
-
+        rpass.set_pipeline(&self.pipeline);
         for batch in &self.batches_metadata {
             rpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            let material = if let Some(material) = gfx.material_cache.get(batch.material_id) {
-                material
-            } else {
-                gfx.material_cache
-                    .get(gfx.placeholder_material_id.unwrap())
-                    .expect("Placeholder material should be present in the material cache")
-            };
-            rpass.set_bind_group(0, material.bind_group(), &[]);
+            let texture_bind_group = &self.texture_bind_groups[&batch.texture_id];
+            rpass.set_bind_group(0, texture_bind_group, &[]);
             rpass.draw(batch.start_vertex_index..batch.end_vertex_index, 0..1);
         }
     }
-}
-
-pub fn create_pass_2d_pipeline(
-    device: &wgpu::Device,
-    material_bind_group_layout: &wgpu::BindGroupLayout,
-    surface_texture_format: wgpu::TextureFormat,
-) -> wgpu::RenderPipeline {
-    let shader_module = device.create_shader_module(include_wgsl!("./pass_2d.wgsl"));
-
-    let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-        label: None,
-        bind_group_layouts: &[&material_bind_group_layout],
-        push_constant_ranges: &[],
-    });
-
-    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: None,
-        layout: Some(&render_pipeline_layout),
-        vertex: wgpu::VertexState {
-            module: &shader_module,
-            entry_point: "vs_main",
-            buffers: &[Vertex::layout()],
-        },
-        primitive: wgpu::PrimitiveState {
-            topology: wgpu::PrimitiveTopology::TriangleList,
-            strip_index_format: None,
-            front_face: wgpu::FrontFace::Ccw,
-            cull_mode: None,
-            unclipped_depth: false,
-            polygon_mode: wgpu::PolygonMode::Fill,
-            conservative: false,
-        },
-        depth_stencil: None,
-        multisample: wgpu::MultisampleState {
-            count: 1,
-            mask: !0,
-            alpha_to_coverage_enabled: false,
-        },
-        fragment: Some(wgpu::FragmentState {
-            module: &shader_module,
-            entry_point: "fs_main",
-            targets: &[Some(wgpu::ColorTargetState {
-                format: surface_texture_format,
-                blend: Some(wgpu::BlendState {
-                    color: wgpu::BlendComponent {
-                        src_factor: wgpu::BlendFactor::SrcAlpha,
-                        dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-                        operation: wgpu::BlendOperation::Add,
-                    },
-                    alpha: wgpu::BlendComponent::default(),
-                }),
-                write_mask: wgpu::ColorWrites::ALL,
-            })],
-        }),
-        multiview: None,
-    })
 }

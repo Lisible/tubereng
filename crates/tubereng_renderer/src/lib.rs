@@ -1,8 +1,7 @@
 #![warn(clippy::pedantic)]
 
-use std::{borrow::BorrowMut, collections::HashMap, sync::Arc};
+use std::{borrow::BorrowMut, sync::Arc};
 
-use pass_2d::create_pass_2d_pipeline;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawWindowHandle};
 use render_graph::{RenderGraph, RenderPass};
 use tubereng_ecs::{
@@ -235,7 +234,12 @@ impl<'w> GraphicsState<'w> {
             texture_size,
         );
 
-        self.texture_cache.insert(texture)
+        let texture_info = texture::Info {
+            width: descriptor.width,
+            height: descriptor.height,
+        };
+
+        self.texture_cache.insert(texture_info, texture)
     }
 
     pub fn load_material(&mut self, descriptor: &material::Descriptor) -> material::Id {
@@ -291,18 +295,14 @@ pub async fn renderer_init<W>(
     let placeholder_texture_id = gfx.load_texture(placeholder_texture);
     let placeholder_material_id = gfx.load_material(&material::Descriptor {
         base_color: placeholder_texture_id,
+        region: texture::Rect {
+            x: 0,
+            y: 0,
+            width: 16,
+            height: 16,
+        },
     });
     gfx.placeholder_material_id = Some(placeholder_material_id);
-
-    let surface_texture_format = gfx.wgpu_state.surface_configuration.format;
-
-    let mut pipelines = RenderPipelines::new();
-    let pass_2d = create_pass_2d_pipeline(
-        &gfx.wgpu_state.device,
-        &gfx.material_bind_group_layout,
-        surface_texture_format,
-    );
-    pipelines.insert("pass_2d_pipeline", pass_2d);
 
     ecs.insert_resource(gfx);
     ecs.insert_resource(RenderGraph::new());
@@ -312,7 +312,6 @@ pub async fn renderer_init<W>(
         encoder: None,
     });
 
-    ecs.insert_resource(pipelines);
     ecs.register_system(&stages::Render, begin_frame_system);
     ecs.register_system(&stages::Render, add_clear_pass_system);
     ecs.register_system(&stages::Render, add_draw_triangle_pass_system);
@@ -358,18 +357,11 @@ fn finish_frame_system(
     mut graphics: ResMut<GraphicsState>,
     mut frame_ctx: ResMut<FrameRenderingContext>,
     graph: Res<RenderGraph>,
-    pipelines: Res<RenderPipelines>,
     storage: &Storage,
 ) {
     let mut encoder = frame_ctx.encoder.take().unwrap();
     let surface_texture_view = frame_ctx.surface_texture_view.take().unwrap();
-    graph.execute(
-        &mut graphics,
-        &pipelines,
-        &mut encoder,
-        &surface_texture_view,
-        storage,
-    );
+    graph.execute(&mut graphics, &mut encoder, &surface_texture_view, storage);
     graphics
         .wgpu_state
         .queue
@@ -379,7 +371,6 @@ fn finish_frame_system(
     surface_texture.present();
     std::mem::drop(graphics);
     std::mem::drop(graph);
-    std::mem::drop(pipelines);
 }
 
 fn add_clear_pass_system(mut graph: ResMut<RenderGraph>) {
@@ -387,7 +378,10 @@ fn add_clear_pass_system(mut graph: ResMut<RenderGraph>) {
 }
 
 fn add_draw_triangle_pass_system(gfx: Res<GraphicsState>, mut graph: ResMut<RenderGraph>) {
-    graph.add_pass(pass_2d::Pass::new(&gfx.wgpu_state.device));
+    graph.add_pass(pass_2d::Pass::new(
+        &gfx.wgpu_state.device,
+        gfx.surface_texture_format(),
+    ));
     std::mem::drop(gfx);
 }
 
@@ -397,7 +391,6 @@ impl RenderPass for ClearPass {
     fn execute(
         &self,
         _gfx: &mut GraphicsState,
-        _pipelines: &RenderPipelines,
         encoder: &mut wgpu::CommandEncoder,
         surface_texture_view: &wgpu::TextureView,
         _storage: &Storage,
@@ -416,37 +409,6 @@ impl RenderPass for ClearPass {
             timestamp_writes: None,
             occlusion_query_set: None,
         });
-    }
-}
-
-pub struct RenderPipelines {
-    pipelines: HashMap<String, wgpu::RenderPipeline>,
-}
-
-impl RenderPipelines {
-    #[must_use]
-    pub fn new() -> Self {
-        Self {
-            pipelines: HashMap::new(),
-        }
-    }
-
-    pub fn insert<S>(&mut self, identifier: S, pipeline: wgpu::RenderPipeline)
-    where
-        S: Into<String>,
-    {
-        self.pipelines.insert(identifier.into(), pipeline);
-    }
-
-    #[must_use]
-    pub fn get(&self, identifier: &str) -> &wgpu::RenderPipeline {
-        &self.pipelines[identifier]
-    }
-}
-
-impl Default for RenderPipelines {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

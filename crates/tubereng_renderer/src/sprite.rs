@@ -1,6 +1,7 @@
-use crate::material;
+use crate::texture;
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Sprite {
-    pub material: Option<material::Id>,
+    pub texture: texture::Id,
+    pub texture_rect: Option<texture::Rect>,
 }
