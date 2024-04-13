@@ -200,6 +200,7 @@ impl Ecs {
     pub fn run_systems(&mut self) {
         self.system_schedule
             .run_systems(&mut self.storage, &mut self.command_queue);
+        self.process_command_queue();
     }
 
     pub fn register_system<S, F, A>(&mut self, _stage: &S, system: F)
