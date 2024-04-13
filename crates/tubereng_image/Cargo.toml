@@ -7,4 +7,4 @@ edition = "2021"
 
 [dependencies]
 tubereng_asset = { path = "../tubereng_asset" }
-image = { version = "0.25", features = ["png", "rayon"] }
+image = { version = "0.25", default-features = false, features = ["png", "rayon"] }
