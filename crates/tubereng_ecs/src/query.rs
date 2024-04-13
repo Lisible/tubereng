@@ -192,21 +192,30 @@ pub trait Definition {
         Self: Sized;
 }
 
-impl<A: Definition, B: Definition> Definition for (A, B) {
-    type Item<'a> = (A::Item<'a>, B::Item<'a>);
+macro_rules! impl_definition_for_tuples {
+    ($head:tt, $($tail:tt,)*) => {
+        impl<$head: Definition, $($tail: Definition,)*> Definition for ($head, $($tail,)*) {
+            type Item<'a> = ($head::Item<'a>, $($tail::Item<'a>,)*);
 
-    fn register_component_accesses(accesses: &ComponentAccesses) {
-        A::register_component_accesses(accesses);
-        B::register_component_accesses(accesses);
-    }
+            fn register_component_accesses(accesses: &ComponentAccesses) {
+                $head::register_component_accesses(accesses);
+                $($tail::register_component_accesses(accesses);)*
+            }
 
-    fn fetch(component_stores: &ComponentStores, entity_id: usize) -> Option<Self::Item<'_>> {
-        Some((
-            A::fetch(component_stores, entity_id)?,
-            B::fetch(component_stores, entity_id)?,
-        ))
-    }
+            fn fetch(component_stores: &ComponentStores, entity_id: usize) -> Option<Self::Item<'_>> {
+                Some((
+                    $head::fetch(component_stores, entity_id)?,
+                    $($tail::fetch(component_stores, entity_id)?,)*
+                ))
+            }
+        }
+
+        impl_definition_for_tuples!($($tail,)*);
+    };
+    () => {};
 }
+
+impl_definition_for_tuples!(A, B, C, D, E, F,);
 
 impl<T: 'static> Definition for &T {
     type Item<'a> = &'a T;
