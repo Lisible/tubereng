@@ -1,6 +1,6 @@
 use std::{any::TypeId, cell::RefCell, collections::HashSet, marker::PhantomData};
 
-use crate::ComponentStores;
+use crate::{ComponentStores, EntityId};
 
 pub struct ComponentAccesses {
     // TODO: Consider using bitsets instead of HashSet, but we would need to
@@ -54,9 +54,13 @@ where
     pub fn iter<'s>(&'s mut self) -> Iter<'w, 's, QD> {
         Iter::new(self, self.entity_count, self.component_stores)
     }
+
+    pub fn iter_with_ids<'s>(&'s mut self) -> IterWithIds<'w, 's, QD> {
+        IterWithIds::new(self, self.entity_count, self.component_stores)
+    }
 }
 
-pub struct Iter<'w, 's, QD>
+pub struct IterWithIds<'w, 's, QD>
 where
     QD: Definition,
 {
@@ -66,7 +70,7 @@ where
     current_entity_index: usize,
 }
 
-impl<'w, 's, QD> Iter<'w, 's, QD>
+impl<'w, 's, QD> IterWithIds<'w, 's, QD>
 where
     QD: Definition,
 {
@@ -85,11 +89,11 @@ where
     }
 }
 
-impl<'w, 's, QD> Iterator for Iter<'w, 's, QD>
+impl<'w, 's, QD> Iterator for IterWithIds<'w, 's, QD>
 where
     QD: Definition,
 {
-    type Item = QD::Item<'w>;
+    type Item = (EntityId, QD::Item<'w>);
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.current_entity_index >= self.entity_count {
@@ -106,8 +110,43 @@ where
             fetched = QD::fetch(self.component_stores, self.current_entity_index);
         }
 
+        let entity_id = self.current_entity_index;
         self.current_entity_index += 1;
-        fetched
+        Some((entity_id, fetched?))
+    }
+}
+
+pub struct Iter<'w, 's, QD>
+where
+    QD: Definition,
+{
+    inner: IterWithIds<'w, 's, QD>,
+}
+
+impl<'w, 's, QD> Iter<'w, 's, QD>
+where
+    QD: Definition,
+{
+    #[must_use]
+    pub fn new(
+        query_state: &'s State<'w, QD>,
+        entity_count: usize,
+        component_stores: &'w ComponentStores,
+    ) -> Self {
+        Self {
+            inner: IterWithIds::new(query_state, entity_count, component_stores),
+        }
+    }
+}
+
+impl<'w, 's, QD> Iterator for Iter<'w, 's, QD>
+where
+    QD: Definition,
+{
+    type Item = QD::Item<'w>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next().map(|item| item.1)
     }
 }
 

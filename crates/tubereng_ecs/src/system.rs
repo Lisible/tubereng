@@ -247,6 +247,9 @@ where
     pub fn iter<'a>(&'a mut self) -> query::Iter<'ecs, 'a, QD> {
         self.state.iter()
     }
+    pub fn iter_with_ids<'a>(&'a mut self) -> query::IterWithIds<'ecs, 'a, QD> {
+        self.state.iter_with_ids()
+    }
 }
 
 impl<'ecs, QD> Argument for Q<'ecs, QD>
