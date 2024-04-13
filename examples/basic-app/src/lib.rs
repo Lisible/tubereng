@@ -13,7 +13,7 @@ use tubereng::{
     input::{keyboard::Key, InputState},
     math::vector::Vector3f,
     renderer::texture,
-    renderer::{material, sprite::Sprite, GraphicsState},
+    renderer::{sprite::Sprite, GraphicsState},
     winit::WinitTuberRunner,
 };
 
@@ -71,10 +71,6 @@ fn init(queue: &CommandQueue, asset_store: ResMut<AssetStore>, mut gfx: ResMut<G
         height: image.height(),
     });
 
-    let material_id = gfx.load_material(&material::Descriptor {
-        base_color: texture_id,
-    });
-
     queue.insert((
         Player,
         Transform {
@@ -83,7 +79,8 @@ fn init(queue: &CommandQueue, asset_store: ResMut<AssetStore>, mut gfx: ResMut<G
             ..Default::default()
         },
         Sprite {
-            material: Some(material_id),
+            texture: texture_id,
+            texture_rect: None,
         },
     ));
     queue.insert((
@@ -93,7 +90,10 @@ fn init(queue: &CommandQueue, asset_store: ResMut<AssetStore>, mut gfx: ResMut<G
             scale: Vector3f::new(0.1, 0.1, 0.1),
             ..Default::default()
         },
-        Sprite::default(),
+        Sprite {
+            texture: texture_id,
+            texture_rect: None,
+        },
     ));
     queue.insert((
         Enemy,
@@ -101,7 +101,10 @@ fn init(queue: &CommandQueue, asset_store: ResMut<AssetStore>, mut gfx: ResMut<G
             scale: Vector3f::new(0.1, 0.1, 0.1),
             ..Default::default()
         },
-        Sprite::default(),
+        Sprite {
+            texture: texture_id,
+            texture_rect: None,
+        },
     ));
     queue.insert((
         Enemy,
@@ -109,7 +112,10 @@ fn init(queue: &CommandQueue, asset_store: ResMut<AssetStore>, mut gfx: ResMut<G
             scale: Vector3f::new(0.1, 0.1, 0.1),
             ..Default::default()
         },
-        Sprite::default(),
+        Sprite {
+            texture: texture_id,
+            texture_rect: None,
+        },
     ));
 
     queue.register_system(&stages::Update, move_player);

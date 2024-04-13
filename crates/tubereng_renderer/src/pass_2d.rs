@@ -12,7 +12,7 @@ use crate::{
     camera,
     mesh::Vertex,
     render_graph::{RenderGraph, RenderPass},
-    sprite::Sprite,
+    sprite::{AnimatedSprite, Sprite},
     texture, GraphicsState,
 };
 
@@ -273,6 +273,46 @@ impl Pass {
             multiview: None,
         })
     }
+
+    fn create_texture_bind_group_for_texture_if_required(
+        &mut self,
+        texture: texture::Id,
+        gfx: &std::cell::Ref<'_, GraphicsState<'_>>,
+    ) {
+        if let std::collections::hash_map::Entry::Vacant(e) =
+            self.texture_bind_groups.entry(texture)
+        {
+            let texture = gfx.texture_cache.get(texture);
+            let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+            let texture_sampler = gfx.device().create_sampler(&wgpu::SamplerDescriptor {
+                label: None,
+                address_mode_u: wgpu::AddressMode::ClampToEdge,
+                address_mode_v: wgpu::AddressMode::ClampToEdge,
+                address_mode_w: wgpu::AddressMode::ClampToEdge,
+                mag_filter: wgpu::FilterMode::Nearest,
+                min_filter: wgpu::FilterMode::Nearest,
+                mipmap_filter: wgpu::FilterMode::Linear,
+                ..Default::default()
+            });
+
+            let texture_bind_group = gfx.device().create_bind_group(&wgpu::BindGroupDescriptor {
+                label: None,
+                layout: &self.texture_bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&texture_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(&texture_sampler),
+                    },
+                ],
+            });
+
+            e.insert(texture_bind_group);
+        }
+    }
 }
 
 impl RenderPass for Pass {
@@ -296,42 +336,7 @@ impl RenderPass for Pass {
         );
 
         for (sprite, transform) in storage.query::<(&Sprite, &Transform)>().iter() {
-            // TODO move that code into a separate function
-            if let std::collections::hash_map::Entry::Vacant(e) =
-                self.texture_bind_groups.entry(sprite.texture)
-            {
-                let texture = gfx.texture_cache.get(sprite.texture);
-                let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-                let texture_sampler = gfx.device().create_sampler(&wgpu::SamplerDescriptor {
-                    label: None,
-                    address_mode_u: wgpu::AddressMode::ClampToEdge,
-                    address_mode_v: wgpu::AddressMode::ClampToEdge,
-                    address_mode_w: wgpu::AddressMode::ClampToEdge,
-                    mag_filter: wgpu::FilterMode::Nearest,
-                    min_filter: wgpu::FilterMode::Nearest,
-                    mipmap_filter: wgpu::FilterMode::Linear,
-                    ..Default::default()
-                });
-
-                let texture_bind_group =
-                    gfx.device().create_bind_group(&wgpu::BindGroupDescriptor {
-                        label: None,
-                        layout: &self.texture_bind_group_layout,
-                        entries: &[
-                            wgpu::BindGroupEntry {
-                                binding: 0,
-                                resource: wgpu::BindingResource::TextureView(&texture_view),
-                            },
-                            wgpu::BindGroupEntry {
-                                binding: 1,
-                                resource: wgpu::BindingResource::Sampler(&texture_sampler),
-                            },
-                        ],
-                    });
-
-                e.insert(texture_bind_group);
-            }
-
+            self.create_texture_bind_group_for_texture_if_required(sprite.texture, &gfx);
             let texture_info = gfx.texture_cache.info(sprite.texture);
             #[allow(clippy::cast_precision_loss)]
             self.queue_quad_2d(
@@ -344,6 +349,27 @@ impl RenderPass for Pass {
                         width: texture_info.width as f32,
                         height: texture_info.height as f32,
                     }),
+                },
+                texture_info,
+            );
+        }
+
+        for (animated_sprite, transform) in storage.query::<(&AnimatedSprite, &Transform)>().iter()
+        {
+            self.create_texture_bind_group_for_texture_if_required(
+                animated_sprite.texture_atlas,
+                &gfx,
+            );
+            let texture_info = gfx.texture_cache.info(animated_sprite.texture_atlas);
+            let animation = &animated_sprite.animation;
+            let rect =
+                animation.animations[animation.current_animation][animation.current_frame].clone();
+            #[allow(clippy::cast_precision_loss)]
+            self.queue_quad_2d(
+                &Quad2d {
+                    transform: transform.clone(),
+                    texture_id: animated_sprite.texture_atlas,
+                    texture_rect: rect,
                 },
                 texture_info,
             );
