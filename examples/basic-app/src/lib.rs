@@ -25,14 +25,6 @@ struct Player;
 #[derive(Debug)]
 struct Enemy;
 
-#[cfg(not(target_arch = "wasm32"))]
-use tubereng::asset::vfs::filesystem::FileSystem;
-
-#[cfg(target_arch = "wasm32")]
-use include_dir::{include_dir, *};
-#[cfg(target_arch = "wasm32")]
-static ASSETS: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/");
-
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen(start))]
 pub async fn run() {
     cfg_if::cfg_if! {
@@ -44,18 +36,9 @@ pub async fn run() {
         }
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
-    let vfs = FileSystem;
-    #[cfg(target_arch = "wasm32")]
-    let vfs = {
-        use tubereng::asset::vfs::web::Web;
-        Web::new(&ASSETS)
-    };
-
     let engine = Engine::builder()
         .with_application_title("basic-app")
         .with_init_system(init)
-        .with_vfs(vfs)
         .build();
     WinitTuberRunner::run(engine).await.unwrap();
 }

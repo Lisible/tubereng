@@ -17,6 +17,7 @@ pub struct Material {
 }
 
 impl Material {
+    #[must_use]
     pub fn bind_group(&self) -> &wgpu::BindGroup {
         &self.bind_group
     }

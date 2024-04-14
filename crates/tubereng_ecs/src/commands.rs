@@ -91,6 +91,7 @@ pub struct DeleteEntity {
 }
 
 impl DeleteEntity {
+    #[must_use]
     pub fn new(entity_id: EntityId) -> Self {
         Self { entity_id }
     }

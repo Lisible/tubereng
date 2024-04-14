@@ -76,6 +76,11 @@ impl Storage {
             .insert(TypeId::of::<R>(), RefCell::new(Box::new(resource)));
     }
 
+    /// Fetches a resource from the Ecs
+    ///
+    /// # Panics
+    ///
+    /// Will panic if the resource can't be downcasted to its actual type
     #[must_use]
     pub fn resource<R: Any>(&self) -> Option<Ref<'_, R>> {
         Some(Ref::map(
@@ -84,6 +89,11 @@ impl Storage {
         ))
     }
 
+    /// Fetches a mutable resource from the Ecs
+    ///
+    /// # Panics
+    ///
+    /// Will panic if the resource can't be downcasted to its actual type
     #[must_use]
     pub fn resource_mut<R: Any>(&self) -> Option<RefMut<'_, R>> {
         Some(RefMut::map(

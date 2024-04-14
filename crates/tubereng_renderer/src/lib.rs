@@ -289,6 +289,7 @@ impl PipelineCache {
         self.pipelines.insert(identifier.to_string(), pipeline);
     }
 
+    #[must_use]
     pub fn has(&self, identifier: &str) -> bool {
         self.pipelines.contains_key(identifier)
     }

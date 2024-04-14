@@ -1,8 +1,6 @@
 #![warn(clippy::pedantic)]
 
 use std::sync::Arc;
-use tubereng_asset::vfs::filesystem::FileSystem;
-use tubereng_asset::vfs::VirtualFileSystem;
 use tubereng_asset::AssetLoader;
 use tubereng_asset::AssetStore;
 
@@ -17,6 +15,17 @@ use tubereng_ecs::{
 };
 use tubereng_renderer::texture;
 
+#[cfg(not(target_arch = "wasm32"))]
+use tubereng_asset::vfs::filesystem::FileSystem;
+#[cfg(target_arch = "wasm32")]
+use {
+    include_dir::{include_dir, Dir},
+    tubereng_asset::vfs::web::Web,
+};
+
+#[cfg(target_arch = "wasm32")]
+static ASSETS: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/");
+
 pub struct Engine {
     application_title: &'static str,
     ecs: Ecs,
@@ -26,11 +35,8 @@ pub struct Engine {
 
 impl Engine {
     #[must_use]
-    pub fn builder<VFS>() -> EngineBuilder<VFS>
-    where
-        VFS: VirtualFileSystem + 'static,
-    {
-        EngineBuilder::new()
+    pub fn builder() -> EngineBuilder {
+        EngineBuilder::default()
     }
 
     pub async fn init_graphics<W>(&mut self, window: Arc<W>)
@@ -39,8 +45,10 @@ impl Engine {
     {
         println!("Init gfx");
 
-        let placeholder_texture_image = ImageLoader::load(include_bytes!("../res/placeholder.png"))
-            .expect("Placeholder texture couldn't be loaded from memory");
+        // SAFETY: The placeholder image is a valid PNG file that is loaded at compile time
+        let placeholder_texture_image = unsafe {
+            ImageLoader::load(include_bytes!("../res/placeholder.png")).unwrap_unchecked()
+        };
         let placeholder_texture_descriptor = texture::Descriptor {
             data: placeholder_texture_image.data(),
             width: placeholder_texture_image.width(),
@@ -81,25 +89,12 @@ impl Engine {
     }
 }
 
-pub struct EngineBuilder<VFS> {
+pub struct EngineBuilder {
     application_title: &'static str,
     init_system: Option<system::System>,
-    vfs: Option<VFS>,
 }
 
-impl<VFS> EngineBuilder<VFS>
-where
-    VFS: VirtualFileSystem + 'static,
-{
-    #[must_use]
-    pub fn new() -> Self {
-        Self {
-            application_title: "Tuber application",
-            init_system: None,
-            vfs: None,
-        }
-    }
-
+impl EngineBuilder {
     pub fn with_application_title(&mut self, application_title: &'static str) -> &mut Self {
         self.application_title = application_title;
         self
@@ -113,15 +108,13 @@ where
         self
     }
 
-    pub fn with_vfs(&mut self, vfs: VFS) -> &mut Self {
-        self.vfs = Some(vfs);
-        self
-    }
-
     pub fn build(&mut self) -> Engine {
         let mut ecs = Ecs::new();
         ecs.insert_resource(InputState::new());
-        ecs.insert_resource(AssetStore::new(self.vfs.take().unwrap()));
+        #[cfg(not(target_arch = "wasm32"))]
+        ecs.insert_resource(AssetStore::new(FileSystem));
+        #[cfg(target_arch = "wasm32")]
+        ecs.insert_resource(AssetStore::new(Web::new(&ASSETS)));
 
         let init_system = self
             .init_system
@@ -136,8 +129,11 @@ where
     }
 }
 
-impl Default for EngineBuilder<FileSystem> {
+impl Default for EngineBuilder {
     fn default() -> Self {
-        Self::new()
+        Self {
+            application_title: "Tuber application",
+            init_system: None,
+        }
     }
 }

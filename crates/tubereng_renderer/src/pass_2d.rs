@@ -63,7 +63,7 @@ pub struct Pass {
 
 impl Pass {
     const MAX_VERTICES: usize = 10_000;
-    pub fn new(device: &wgpu::Device, surface_texture_format: wgpu::TextureFormat) -> Self {
+    pub fn new(device: &wgpu::Device) -> Self {
         let vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("pass_2d_vertex_buffer"),
             size: (Self::MAX_VERTICES * std::mem::size_of::<Vertex>()) as wgpu::BufferAddress,
@@ -447,9 +447,6 @@ pub(crate) fn add_pass_system(
         return;
     }
 
-    graph.add_pass(Pass::new(
-        &gfx.wgpu_state.device,
-        gfx.surface_texture_format(),
-    ));
+    graph.add_pass(Pass::new(&gfx.wgpu_state.device));
     std::mem::drop(gfx);
 }
