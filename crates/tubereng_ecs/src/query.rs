@@ -1,4 +1,10 @@
-use std::{any::TypeId, cell::RefCell, collections::HashSet, marker::PhantomData};
+use std::{
+    any::TypeId,
+    cell::RefCell,
+    collections::HashSet,
+    marker::PhantomData,
+    ops::{Deref, DerefMut},
+};
 
 use crate::{ComponentStores, EntityId};
 
@@ -234,7 +240,7 @@ impl<T: 'static> Definition for &T {
 }
 
 impl<T: 'static> Definition for &mut T {
-    type Item<'a> = &'a mut T;
+    type Item<'a> = ComponentRefMut<'a, T>;
     fn register_component_accesses(accesses: &ComponentAccesses) {
         let component_type_id = TypeId::of::<T>();
         assert!(
@@ -249,6 +255,64 @@ impl<T: 'static> Definition for &mut T {
         accesses.write.borrow_mut().insert(component_type_id);
     }
     fn fetch(component_stores: &ComponentStores, entity_id: usize) -> Option<Self::Item<'_>> {
-        component_stores.get(&TypeId::of::<T>())?.get_mut(entity_id)
+        Some(ComponentRefMut {
+            inner: component_stores
+                .get(&TypeId::of::<T>())?
+                .get_mut(entity_id)?,
+            component_stores,
+            entity_id,
+        })
+    }
+}
+
+/// Reference to a component that sets the dirty bit of the component on
+/// deref.
+pub struct ComponentRefMut<'a, T: 'static> {
+    pub(crate) inner: &'a mut T,
+    pub(crate) component_stores: &'a ComponentStores,
+    pub(crate) entity_id: usize,
+}
+
+impl<'a, T: 'static> Deref for ComponentRefMut<'a, T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        self.inner
+    }
+}
+
+impl<T: 'static> DerefMut for ComponentRefMut<'_, T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.component_stores
+            .get(&TypeId::of::<T>())
+            .unwrap()
+            .set_dirty(self.entity_id);
+        self.inner
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::Ecs;
+
+    use super::*;
+
+    #[derive(Debug)]
+    struct Name(&'static str);
+
+    #[test]
+    fn set_component_dirty_flag() {
+        let mut ecs = Ecs::new();
+        let entity = ecs.insert((Name("Some name"),));
+
+        for name in ecs.query::<&mut Name>().iter() {
+            assert_eq!("Some name", name.0);
+        }
+        assert!(!ecs.storage.component_stores[&TypeId::of::<Name>()].dirty(entity));
+
+        for mut name in ecs.query::<&mut Name>().iter() {
+            name.0 = "Some other name";
+        }
+        assert!(ecs.storage.component_stores[&TypeId::of::<Name>()].dirty(entity));
     }
 }

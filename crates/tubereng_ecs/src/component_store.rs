@@ -1,4 +1,8 @@
-use std::{alloc::Layout, cell::UnsafeCell, ptr::NonNull};
+use std::{
+    alloc::Layout,
+    cell::{RefCell, UnsafeCell},
+    ptr::NonNull,
+};
 
 use crate::{bitset::BitSet, EntityId, MAX_ENTITY_COUNT};
 
@@ -7,6 +11,7 @@ pub struct ComponentStore {
     data: UnsafeCell<NonNull<u8>>,
     cap: usize,
     entities_bitset: [u8; MAX_ENTITY_COUNT / 8],
+    dirty_bitset: RefCell<[u8; MAX_ENTITY_COUNT / 8]>,
     drop_fn: unsafe fn(*mut u8),
 }
 
@@ -26,8 +31,17 @@ impl ComponentStore {
             data: UnsafeCell::new(NonNull::dangling()),
             cap,
             entities_bitset: [0u8; MAX_ENTITY_COUNT / 8],
+            dirty_bitset: RefCell::new([0u8; MAX_ENTITY_COUNT / 8]),
             drop_fn,
         }
+    }
+
+    pub fn set_dirty(&self, entity_id: EntityId) {
+        self.dirty_bitset.borrow_mut().set_bit(entity_id);
+    }
+
+    pub fn dirty(&self, entity_id: EntityId) -> bool {
+        self.dirty_bitset.borrow_mut().bit(entity_id)
     }
 
     pub fn store<C>(&mut self, entity_id: EntityId, mut component: C) {

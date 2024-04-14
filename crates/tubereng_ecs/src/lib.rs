@@ -1,6 +1,7 @@
 #![warn(clippy::pedantic)]
 
 use log::trace;
+use query::ComponentRefMut;
 use relationship::{Relationship, Relationships};
 use std::{
     alloc::Layout,
@@ -249,11 +250,17 @@ impl Ecs {
 
     /// Returns a mutable reference to a component in the Ecs, or `None` if not found.
     #[must_use]
-    pub fn component_mut<C>(&self, entity_id: EntityId) -> Option<&mut C>
+    pub fn component_mut<C>(&self, entity_id: EntityId) -> Option<ComponentRefMut<'_, C>>
     where
         C: 'static,
     {
-        self.storage.component_mut(entity_id)
+        self.storage
+            .component_mut(entity_id)
+            .map(|r| ComponentRefMut {
+                inner: r,
+                component_stores: &self.storage.component_stores,
+                entity_id,
+            })
     }
 
     pub fn query<QD>(&mut self) -> query::State<QD>
@@ -443,7 +450,7 @@ mod tests {
     fn ecs_component_mut() {
         let mut ecs = Ecs::new();
         let enemy = ecs.insert((Enemy, Health(5), Position { x: 5, y: 9 }));
-        let enemy_health = ecs.component_mut::<Health>(enemy).unwrap();
+        let mut enemy_health = ecs.component_mut::<Health>(enemy).unwrap();
         enemy_health.0 -= 1;
         assert_eq!(ecs.component::<Health>(enemy), Some(&Health(4)));
     }
@@ -491,8 +498,8 @@ mod tests {
         let first_enemy = ecs.insert((Enemy, Health(5), Position { x: 5, y: 9 }));
         let second_enemy = ecs.insert((Enemy, Health(2), Position { x: 7, y: 12 }));
 
-        for (_, enemy_health) in ecs.query::<(&Enemy, &mut Health)>().iter() {
-            let Health(enemy_health) = enemy_health;
+        for (_, mut enemy_health) in ecs.query::<(&Enemy, &mut Health)>().iter() {
+            let Health(enemy_health) = &mut *enemy_health;
             *enemy_health -= 1;
         }
 

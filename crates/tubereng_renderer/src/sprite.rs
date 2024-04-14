@@ -38,7 +38,7 @@ pub struct AnimatedSprite {
 
 pub fn animate_sprite_system(mut query_animated_sprite: Q<&mut AnimatedSprite>) {
     let now = 0;
-    for sprite in query_animated_sprite.iter() {
+    for mut sprite in query_animated_sprite.iter() {
         if sprite.animation.ticks - now > sprite.animation.ticks_per_frame {
             let animation_frame_count =
                 sprite.animation.animations[sprite.animation.current_animation].len();
