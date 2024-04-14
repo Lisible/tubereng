@@ -1,6 +1,7 @@
 #![warn(clippy::pedantic)]
 
 use log::trace;
+use relationship::{Relationship, Relationships};
 use std::{
     alloc::Layout,
     any::{Any, TypeId},
@@ -15,6 +16,7 @@ mod bitset;
 pub mod commands;
 mod component_store;
 pub mod query;
+pub mod relationship;
 pub mod system;
 
 pub type EntityId = usize;
@@ -26,6 +28,7 @@ pub struct Storage {
     next_entity_id: EntityId,
     deleted_entities: Vec<EntityId>,
     component_stores: ComponentStores,
+    relationships: Relationships,
     resources: Resources,
 }
 
@@ -43,6 +46,7 @@ impl Storage {
             deleted_entities: vec![],
             component_stores: ComponentStores::new(),
             resources: Resources::new(),
+            relationships: Relationships::new(),
         }
     }
 
@@ -100,6 +104,15 @@ impl Storage {
             self.resources.get(&TypeId::of::<R>())?.borrow_mut(),
             |r| r.downcast_mut::<R>().expect("Couldn't downcast resource"),
         ))
+    }
+
+    pub fn insert_relationship<R: 'static>(&mut self, source: EntityId, target: EntityId) {
+        self.relationships.insert::<R>(source, target);
+    }
+
+    #[must_use]
+    pub fn relationship<R: 'static>(&self) -> Option<&Relationship> {
+        self.relationships.get::<R>()
     }
 
     #[must_use]
@@ -193,6 +206,14 @@ impl Ecs {
         R: Any,
     {
         self.storage.insert_resource(resource);
+    }
+
+    pub fn insert_relationship<R: 'static>(&mut self, source: EntityId, target: EntityId) {
+        self.storage.insert_relationship::<R>(source, target);
+    }
+
+    pub fn relationship<R: 'static>(&self) -> Option<&Relationship> {
+        self.storage.relationship::<R>()
     }
 
     pub fn command_queue(&self) -> &CommandQueue {
@@ -504,5 +525,20 @@ mod tests {
 
         let r = ecs.resource::<SomeResource>().unwrap();
         assert_eq!(&*r, &SomeResource(10));
+    }
+
+    #[test]
+    fn ecs_insert_relationship() {
+        struct ChildOf;
+        let mut ecs = Ecs::new();
+        let entity_a = ecs.insert(());
+        let entity_b = ecs.insert(());
+        ecs.insert_relationship::<ChildOf>(entity_b, entity_a);
+        assert!(ecs
+            .relationship::<ChildOf>()
+            .unwrap()
+            .sources(entity_a)
+            .unwrap()
+            .contains(&entity_b));
     }
 }

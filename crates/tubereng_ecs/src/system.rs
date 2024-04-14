@@ -6,6 +6,7 @@ use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 
 use crate::commands::CommandQueue;
+use crate::relationship::Relationship;
 use crate::{query, ComponentStores, EntityId, Storage};
 
 pub mod stages {
@@ -284,6 +285,29 @@ impl Argument for &CommandQueue {
     }
 }
 
+pub struct Rel<'a, R>(&'a Relationship, PhantomData<&'a R>);
+impl<'a, R> Deref for Rel<'a, R> {
+    type Target = &'a Relationship;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<R> Argument for Rel<'_, R>
+where
+    R: 'static,
+{
+    type Type<'a> = Rel<'a, R>;
+
+    fn provide<'a>(
+        _command_queue: &'a CommandQueue,
+        storage: &'a Storage,
+    ) -> Option<Self::Type<'a>> {
+        Some(Rel(storage.relationship::<R>()?, PhantomData))
+    }
+}
+
 pub struct Res<'a, T>(Ref<'a, T>);
 impl<'a, T> Deref for Res<'a, T> {
     type Target = Ref<'a, T>;
@@ -340,7 +364,7 @@ impl<T: 'static> Argument for ResMut<'_, T> {
 
 #[cfg(test)]
 mod tests {
-    use crate::Ecs;
+    use crate::{relationship::ChildOf, Ecs};
 
     use super::*;
 
@@ -382,6 +406,21 @@ mod tests {
         ecs.insert_resource(MyResource);
         ecs.run_single_run_system(
             &(|res: Option<Res<MyResource>>| assert!(res.is_some())).into_system(),
+        );
+    }
+
+    #[test]
+    fn ecs_relationship() {
+        let mut ecs = Ecs::new();
+        let a = ecs.insert(());
+        let b = ecs.insert(());
+        ecs.insert_relationship::<ChildOf>(b, a);
+
+        ecs.run_single_run_system(
+            &(move |rel: Rel<ChildOf>| {
+                assert!(rel.sources(a).unwrap().contains(&b));
+            })
+            .into_system(),
         );
     }
 }
