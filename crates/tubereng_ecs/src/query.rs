@@ -223,6 +223,20 @@ macro_rules! impl_definition_for_tuples {
 
 impl_definition_for_tuples!(A, B, C, D, E, F,);
 
+pub struct DirtyState<C>(PhantomData<C>);
+impl<C: 'static> Definition for DirtyState<C> {
+    type Item<'a> = bool;
+
+    fn register_component_accesses(_accesses: &ComponentAccesses) {}
+
+    fn fetch(component_stores: &ComponentStores, entity_id: usize) -> Option<Self::Item<'_>>
+    where
+        Self: Sized,
+    {
+        Some(component_stores.get(&TypeId::of::<C>())?.dirty(entity_id))
+    }
+}
+
 impl<T: 'static> Definition for &T {
     type Item<'a> = &'a T;
     fn register_component_accesses(accesses: &ComponentAccesses) {
@@ -306,14 +320,18 @@ mod tests {
         let entity = ecs.insert((Name("Some name"),));
 
         ecs.storage.clear_dirty_flags();
-        for name in ecs.query::<&mut Name>().iter() {
+        for (name, dirty) in ecs.query::<(&mut Name, DirtyState<Name>)>().iter() {
             assert_eq!("Some name", name.0);
+            assert!(!dirty);
         }
         assert!(!ecs.storage.component_stores[&TypeId::of::<Name>()].dirty(entity));
 
-        for mut name in ecs.query::<&mut Name>().iter() {
+        for (mut name, dirty) in ecs.query::<(&mut Name, DirtyState<Name>)>().iter() {
             name.0 = "Some other name";
+            assert!(!dirty);
         }
+
+        assert!(ecs.query::<DirtyState<Name>>().iter().next().unwrap());
         assert!(ecs.storage.component_stores[&TypeId::of::<Name>()].dirty(entity));
     }
 }
