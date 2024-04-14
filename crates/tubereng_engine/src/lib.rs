@@ -59,6 +59,7 @@ impl Engine {
     /// Updates the state of the engine
     pub fn update(&mut self, delta_time: f32) {
         self.ecs.insert_resource(DeltaTime(delta_time));
+        self.ecs.clear_dirty_flags();
         if !self.init_system_ran {
             self.ecs.run_single_run_system(&self.init_system);
             self.init_system_ran = true;

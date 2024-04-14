@@ -280,8 +280,11 @@ impl Ecs {
         self.process_command_queue();
     }
 
-    pub fn run_systems(&mut self) {
+    pub fn clear_dirty_flags(&mut self) {
         self.storage.clear_dirty_flags();
+    }
+
+    pub fn run_systems(&mut self) {
         self.system_schedule
             .run_systems(&mut self.storage, &mut self.command_queue);
         self.process_command_queue();
