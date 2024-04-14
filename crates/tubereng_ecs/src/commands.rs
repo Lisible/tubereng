@@ -30,6 +30,10 @@ impl CommandQueue {
         self.push_command(InsertResource::new(resource));
     }
 
+    pub fn insert_relationship<R: 'static>(&self, source: EntityId, target: EntityId) {
+        self.push_command(InsertRelationship::<R>::new(source, target));
+    }
+
     pub fn register_system<S, F, A>(&self, _stage: &S, system: F)
     where
         S: 'static,
@@ -127,6 +131,35 @@ where
 {
     fn apply(&mut self, ecs: &mut Ecs) {
         ecs.insert_resource(self.resource.take().unwrap());
+    }
+}
+
+pub struct InsertRelationship<R>
+where
+    R: 'static,
+{
+    source: EntityId,
+    target: EntityId,
+    _marker: PhantomData<R>,
+}
+
+impl<R> InsertRelationship<R> {
+    #[must_use]
+    pub fn new(source: EntityId, target: EntityId) -> Self {
+        Self {
+            source,
+            target,
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<R> Command for InsertRelationship<R>
+where
+    R: 'static,
+{
+    fn apply(&mut self, ecs: &mut Ecs) {
+        ecs.insert_relationship::<R>(self.source, self.target);
     }
 }
 
