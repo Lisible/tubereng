@@ -305,6 +305,7 @@ mod tests {
         let mut ecs = Ecs::new();
         let entity = ecs.insert((Name("Some name"),));
 
+        ecs.storage.clear_dirty_flags();
         for name in ecs.query::<&mut Name>().iter() {
             assert_eq!("Some name", name.0);
         }

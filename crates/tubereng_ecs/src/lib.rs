@@ -559,6 +559,7 @@ mod tests {
     fn storage_clear_dirty_flags() {
         let mut storage = Storage::new();
         storage.insert((Health(23),));
+        storage.clear_dirty_flags();
 
         let mut health = storage.component_mut::<Health>(0).unwrap();
         assert!(!storage.component_stores[&TypeId::of::<Health>()].dirty(0));
