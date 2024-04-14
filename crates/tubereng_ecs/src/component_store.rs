@@ -51,6 +51,7 @@ impl ComponentStore {
     pub fn store<C>(&mut self, entity_id: EntityId, mut component: C) {
         assert!(entity_id < MAX_ENTITY_COUNT, "The component store is full");
         self.entities_bitset.set_bit(entity_id);
+        self.dirty_bitset.borrow_mut().set_bit(entity_id);
         self.ensure_capacity(entity_id + 1);
 
         if self.component_layout.size() > 0 {
