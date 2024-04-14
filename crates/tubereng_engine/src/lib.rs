@@ -43,8 +43,6 @@ impl Engine {
     where
         W: HasWindowHandle + HasDisplayHandle + std::marker::Send + std::marker::Sync,
     {
-        println!("Init gfx");
-
         // SAFETY: The placeholder image is a valid PNG file that is loaded at compile time
         let placeholder_texture_image = unsafe {
             ImageLoader::load(include_bytes!("../res/placeholder.png")).unwrap_unchecked()
