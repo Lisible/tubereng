@@ -2,6 +2,7 @@ pub trait BitSet {
     fn set_bit(&mut self, bit: usize);
     fn unset_bit(&mut self, bit: usize);
     fn bit(&self, bit: usize) -> bool;
+    fn clear_bits(&mut self);
 }
 
 impl BitSet for [u8] {
@@ -21,6 +22,12 @@ impl BitSet for [u8] {
         let byte = bit >> 3;
         let bit = bit & 7;
         self[byte] & (1 << bit) != 0
+    }
+
+    fn clear_bits(&mut self) {
+        for i in 0..self.len() {
+            self[i] = 0;
+        }
     }
 }
 

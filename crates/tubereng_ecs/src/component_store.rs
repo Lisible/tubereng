@@ -36,6 +36,10 @@ impl ComponentStore {
         }
     }
 
+    pub fn clear_dirty_bitset(&mut self) {
+        self.dirty_bitset.borrow_mut().clear_bits();
+    }
+
     pub fn set_dirty(&self, entity_id: EntityId) {
         self.dirty_bitset.borrow_mut().set_bit(entity_id);
     }

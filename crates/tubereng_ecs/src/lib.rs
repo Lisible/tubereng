@@ -56,6 +56,12 @@ impl Storage {
         self.next_entity_id - self.deleted_entities.len()
     }
 
+    pub fn clear_dirty_flags(&mut self) {
+        for component_store in self.component_stores.values_mut() {
+            component_store.clear_dirty_bitset();
+        }
+    }
+
     pub fn insert<ED>(&mut self, entity_definition: ED) -> EntityId
     where
         ED: EntityDefinition,
@@ -131,7 +137,7 @@ impl Storage {
     }
 
     #[must_use]
-    pub fn component_mut<C>(&self, entity_id: EntityId) -> Option<&mut C>
+    pub fn component_mut<C>(&self, entity_id: EntityId) -> Option<ComponentRefMut<'_, C>>
     where
         C: 'static,
     {
@@ -142,6 +148,11 @@ impl Storage {
         self.component_stores
             .get(&TypeId::of::<C>())?
             .get_mut(entity_id)
+            .map(|r| ComponentRefMut {
+                inner: r,
+                component_stores: &self.component_stores,
+                entity_id,
+            })
     }
 
     #[must_use]
@@ -254,13 +265,7 @@ impl Ecs {
     where
         C: 'static,
     {
-        self.storage
-            .component_mut(entity_id)
-            .map(|r| ComponentRefMut {
-                inner: r,
-                component_stores: &self.storage.component_stores,
-                entity_id,
-            })
+        self.storage.component_mut(entity_id)
     }
 
     pub fn query<QD>(&mut self) -> query::State<QD>
@@ -276,6 +281,7 @@ impl Ecs {
     }
 
     pub fn run_systems(&mut self) {
+        self.storage.clear_dirty_flags();
         self.system_schedule
             .run_systems(&mut self.storage, &mut self.command_queue);
         self.process_command_queue();
@@ -547,5 +553,18 @@ mod tests {
             .sources(entity_a)
             .unwrap()
             .contains(&entity_b));
+    }
+
+    #[test]
+    fn storage_clear_dirty_flags() {
+        let mut storage = Storage::new();
+        storage.insert((Health(23),));
+
+        let mut health = storage.component_mut::<Health>(0).unwrap();
+        assert!(!storage.component_stores[&TypeId::of::<Health>()].dirty(0));
+        health.0 = 22;
+        assert!(storage.component_stores[&TypeId::of::<Health>()].dirty(0));
+        storage.clear_dirty_flags();
+        assert!(!storage.component_stores[&TypeId::of::<Health>()].dirty(0));
     }
 }
