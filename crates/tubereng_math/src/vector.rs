@@ -3,6 +3,7 @@ use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssi
 
 use crate::number_traits::{Float, Zero};
 
+pub type Vector2f = Vector2<f32>;
 pub type Vector3f = Vector3<f32>;
 pub type Vector4f = Vector4<f32>;
 
