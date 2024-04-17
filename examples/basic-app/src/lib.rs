@@ -66,6 +66,7 @@ fn init(queue: &CommandQueue, asset_store: ResMut<AssetStore>, mut gfx: ResMut<G
 
     queue.insert((
         Player::default(),
+        Grounded,
         Transform {
             translation: Vector3f::new(0.0, 600.0 / 4.0 - 21.0, 0.0),
             scale: Vector3f::new(4.0, 4.0, 4.0),
@@ -100,20 +101,24 @@ fn init(queue: &CommandQueue, asset_store: ResMut<AssetStore>, mut gfx: ResMut<G
         ));
     }
 
-    queue.register_system(&stages::Update, move_player_system);
+    queue.register_system(&stages::Update, move_player_grounded_system);
+    queue.register_system(&stages::Update, move_player_jumping_system);
 }
 
 #[derive(Debug)]
 pub struct Jumping;
+#[derive(Debug)]
+pub struct Grounded;
 
-fn move_player_system(
-    mut query_player: Q<(&mut Player, &mut Transform)>,
+fn move_player_grounded_system(
+    queue: &CommandQueue,
+    mut query_player: Q<(&mut Player, &mut Transform, &Grounded)>,
     delta_time: Res<DeltaTime>,
     input_state: Res<InputState>,
 ) {
     const MAX_PLAYER_VELOCITY: f32 = 100.0;
     const FRICTION: f32 = 0.4;
-    let Some((mut player, mut transform)) = query_player.first() else {
+    let Some((player_id, (mut player, mut transform, _))) = query_player.first_with_id() else {
         return;
     };
     let delta_time = delta_time.0;
@@ -124,6 +129,15 @@ fn move_player_system(
         player.acceleration.x = -1.0;
     } else {
         player.acceleration.x = 0.0;
+    }
+
+    if input_state.keyboard.is_key_down(Key::W) {
+        player.acceleration.y = -0.2;
+        queue.remove_component::<Grounded>(player_id);
+        queue.insert_component(player_id, Jumping);
+        queue.insert_component(player_id, MaxJumpHeightReached(false));
+    } else {
+        player.acceleration.y = 0.0;
     }
 
     if player.velocity.x > 0.0 && player.acceleration.x.abs() < 0.01 {
@@ -146,12 +160,78 @@ fn move_player_system(
         player.velocity.y = -MAX_PLAYER_VELOCITY;
     }
 
-    if transform.translation.y > 600.0 / 4.0 - 21.0 {
-        transform.translation.y = 600.0 / 4.0 - 21.0;
-        player.acceleration.y = 0.0;
-        player.velocity.y = 0.0;
+    transform.translation.x += player.velocity.x * delta_time;
+    transform.translation.y += player.velocity.y * delta_time;
+}
+
+#[derive(Debug)]
+struct MaxJumpHeightReached(pub bool);
+
+fn move_player_jumping_system(
+    queue: &CommandQueue,
+    mut query_player: Q<(
+        &mut Player,
+        &mut Transform,
+        &Jumping,
+        &mut MaxJumpHeightReached,
+    )>,
+    delta_time: Res<DeltaTime>,
+    input_state: Res<InputState>,
+) {
+    const MAX_PLAYER_VELOCITY: f32 = 100.0;
+    const GRAVITY: f32 = 0.015;
+    const FRICTION: f32 = 0.1;
+    let Some((player_id, (mut player, mut transform, _, mut max_jump_height_reached))) =
+        query_player.first_with_id()
+    else {
+        return;
+    };
+    let delta_time = delta_time.0;
+
+    if !max_jump_height_reached.0 && input_state.keyboard.is_key_down(Key::W) {
+        player.acceleration.y -= 0.04;
+        if player.acceleration.y < -1.0 {
+            max_jump_height_reached.0 = true;
+        }
+    }
+
+    if input_state.keyboard.is_key_down(Key::D) {
+        player.acceleration.x = 1.0;
+    } else if input_state.keyboard.is_key_down(Key::A) {
+        player.acceleration.x = -1.0;
+    } else {
+        player.acceleration.x = 0.0;
+    }
+
+    if player.velocity.x > 0.0 && player.acceleration.x.abs() < 0.01 {
+        player.velocity.x -= FRICTION;
+    } else if player.velocity.x < 0.0 && player.acceleration.x.abs() < 0.01 {
+        player.velocity.x += FRICTION;
+    }
+
+    player.velocity.x += player.acceleration.x;
+    if player.velocity.x > MAX_PLAYER_VELOCITY {
+        player.velocity.x = MAX_PLAYER_VELOCITY;
+    } else if player.velocity.x < -MAX_PLAYER_VELOCITY {
+        player.velocity.x = -MAX_PLAYER_VELOCITY;
+    }
+
+    player.acceleration.y += GRAVITY;
+    player.velocity.y += player.acceleration.y;
+    if player.velocity.y > MAX_PLAYER_VELOCITY {
+        player.velocity.y = MAX_PLAYER_VELOCITY;
+    } else if player.velocity.y < -MAX_PLAYER_VELOCITY {
+        player.velocity.y = -MAX_PLAYER_VELOCITY;
     }
 
     transform.translation.x += player.velocity.x * delta_time;
     transform.translation.y += player.velocity.y * delta_time;
+    if transform.translation.y > 600.0 / 4.0 - 21.0 {
+        transform.translation.y = 600.0 / 4.0 - 21.0;
+        player.acceleration.y = 0.0;
+        player.velocity.y = 0.0;
+        queue.remove_component::<Jumping>(player_id);
+        queue.remove_component::<MaxJumpHeightReached>(player_id);
+        queue.insert_component(player_id, Grounded);
+    }
 }
