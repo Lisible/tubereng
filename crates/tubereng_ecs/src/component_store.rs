@@ -61,7 +61,6 @@ impl ComponentStore {
             unsafe {
                 self.write(entity_id, std::ptr::addr_of_mut!(component).cast());
             }
-
             std::mem::forget(component);
         }
     }

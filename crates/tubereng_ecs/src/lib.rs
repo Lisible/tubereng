@@ -85,6 +85,22 @@ impl Storage {
         entity_id
     }
 
+    pub fn insert_component<C: 'static>(&mut self, entity_id: EntityId, component: C) {
+        let component_store = self
+            .component_stores
+            .entry(TypeId::of::<C>())
+            .or_insert(ComponentStore::new(Layout::new::<C>(), drop_fn_of::<C>));
+        component_store.store(entity_id, component);
+    }
+
+    pub fn remove_component<C: 'static>(&mut self, entity_id: EntityId) {
+        let Some(component_store) = self.component_stores.get_mut(&TypeId::of::<C>()) else {
+            return;
+        };
+
+        component_store.delete(entity_id);
+    }
+
     pub fn delete(&mut self, entity_id: EntityId) {
         for component_store in self.component_stores.values_mut() {
             component_store.delete(entity_id);
@@ -222,6 +238,14 @@ impl Ecs {
         ED: EntityDefinition,
     {
         self.storage.insert(entity_definition)
+    }
+
+    pub fn insert_component<C: 'static>(&mut self, entity_id: EntityId, component: C) {
+        self.storage.insert_component(entity_id, component);
+    }
+
+    pub fn remove_component<C: 'static>(&mut self, entity_id: EntityId) {
+        self.storage.remove_component::<C>(entity_id);
     }
 
     /// Deletes the entity with the given id

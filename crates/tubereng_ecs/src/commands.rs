@@ -46,6 +46,14 @@ impl CommandQueue {
         self.compute_next_entity_id()
     }
 
+    pub fn insert_component<C: 'static>(&self, entity_id: EntityId, component: C) {
+        self.push_command(InsertComponent::new(entity_id, component));
+    }
+
+    pub fn remove_component<C: 'static>(&self, entity_id: EntityId) {
+        self.push_command(RemoveComponent::<C>::new(entity_id));
+    }
+
     pub fn delete(&self, entity_id: EntityId) {
         self.push_command(DeleteEntity::new(entity_id));
     }
@@ -108,6 +116,47 @@ impl Command for InsertEntity {
     fn apply(&mut self, ecs: &mut Ecs) {
         let boxed_ed = self.entity_definition.take().unwrap();
         ecs.insert(boxed_ed);
+    }
+}
+
+pub struct InsertComponent<C> {
+    entity_id: EntityId,
+    component: Option<C>,
+}
+
+impl<C> InsertComponent<C> {
+    pub fn new(entity_id: EntityId, component: C) -> Self {
+        Self {
+            entity_id,
+            component: Some(component),
+        }
+    }
+}
+
+impl<C: 'static> Command for InsertComponent<C> {
+    fn apply(&mut self, ecs: &mut Ecs) {
+        ecs.insert_component(self.entity_id, self.component.take().unwrap());
+    }
+}
+
+pub struct RemoveComponent<C> {
+    entity_id: EntityId,
+    _marker: PhantomData<C>,
+}
+
+impl<C> RemoveComponent<C> {
+    #[must_use]
+    pub fn new(entity_id: EntityId) -> Self {
+        Self {
+            entity_id,
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<C: 'static> Command for RemoveComponent<C> {
+    fn apply(&mut self, ecs: &mut Ecs) {
+        ecs.remove_component::<C>(self.entity_id);
     }
 }
 

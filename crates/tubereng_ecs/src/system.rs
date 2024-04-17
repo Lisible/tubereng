@@ -249,6 +249,10 @@ where
     pub fn first(&mut self) -> Option<QD::Item<'_>> {
         self.state.iter().next()
     }
+
+    pub fn first_with_id(&mut self) -> Option<(EntityId, QD::Item<'_>)> {
+        self.state.iter_with_ids().next()
+    }
     pub fn iter<'a>(&'a mut self) -> query::Iter<'ecs, 'a, QD> {
         self.state.iter()
     }
