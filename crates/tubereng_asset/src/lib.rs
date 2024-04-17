@@ -88,19 +88,22 @@ impl AssetStore {
     where
         A: 'static + Asset,
     {
-        let mut resolved_asset_path = PathBuf::new();
         #[cfg(not(target_arch = "wasm32"))]
-        {
-            resolved_asset_path = if let Ok(manifest_path) = std::env::var("CARGO_MANIFEST_DIR") {
-                PathBuf::from(manifest_path)
-            } else {
-                let mut path =
-                    std::env::current_exe().map_err(AssetError::ExecutablePathAcquisitionFailed)?;
-                path.pop();
-                path
-            };
+        let mut resolved_asset_path = {
+            let mut resolved_asset_path =
+                if let Ok(manifest_path) = std::env::var("CARGO_MANIFEST_DIR") {
+                    PathBuf::from(manifest_path)
+                } else {
+                    let mut path = std::env::current_exe()
+                        .map_err(AssetError::ExecutablePathAcquisitionFailed)?;
+                    path.pop();
+                    path
+                };
             resolved_asset_path.push("assets/");
-        }
+            resolved_asset_path
+        };
+        #[cfg(target_arch = "wasm32")]
+        let mut resolved_asset_path = PathBuf::new();
 
         resolved_asset_path.push(asset_path);
         let bytes = self.fs.read_bytes(
