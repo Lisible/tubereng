@@ -1,6 +1,12 @@
 #![warn(clippy::pedantic)]
 
-use tubereng_math::{matrix::Matrix4f, quaternion::Quaternion, vector::Vector3f};
+use std::collections::HashMap;
+
+use tubereng_math::{
+    matrix::{Identity, Matrix4f},
+    quaternion::Quaternion,
+    vector::Vector3f,
+};
 
 pub struct DeltaTime(pub f32);
 
@@ -44,6 +50,37 @@ impl From<Matrix4f> for Transform {
             scale,
             rotation,
         }
+    }
+}
+
+pub struct TransformCache {
+    transform_matrices: HashMap<usize, Matrix4f>,
+}
+
+impl TransformCache {
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            transform_matrices: HashMap::new(),
+        }
+    }
+
+    pub fn set(&mut self, id: usize, matrix: Matrix4f) {
+        self.transform_matrices.insert(id, matrix);
+    }
+
+    #[must_use]
+    pub fn get(&self, id: usize) -> Matrix4f {
+        *self
+            .transform_matrices
+            .get(&id)
+            .unwrap_or(&Matrix4f::identity())
+    }
+}
+
+impl Default for TransformCache {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

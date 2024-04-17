@@ -83,6 +83,23 @@ impl Relationship {
 
         successors
     }
+
+    #[must_use]
+    pub fn leaves(&self, max_entity_id: EntityId, ignore_entities: &[EntityId]) -> Vec<EntityId> {
+        let mut leaves = vec![];
+        for i in 0..=max_entity_id {
+            if ignore_entities.contains(&i) {
+                continue;
+            }
+
+            match self.targets(i) {
+                Some(targets) if !targets.is_empty() => {}
+                _ => leaves.push(i),
+            }
+        }
+
+        leaves
+    }
 }
 
 #[cfg(test)]
@@ -136,5 +153,21 @@ mod tests {
         assert!(successors.contains(&3));
         assert!(successors.contains(&5));
         assert!(successors.contains(&6));
+    }
+
+    #[test]
+    fn leaves() {
+        let mut relationship = Relationship::default();
+        relationship.add(4, 3);
+        relationship.add(3, 2);
+        relationship.add(2, 1);
+        relationship.add(2, 5);
+        relationship.add(5, 6);
+        relationship.add(1, 0);
+
+        let leaves = relationship.leaves(6, &[]);
+        assert!(leaves.contains(&0));
+        assert!(leaves.contains(&6));
+        assert_eq!(leaves.len(), 2);
     }
 }

@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 
-use tubereng_core::Transform;
+use tubereng_core::TransformCache;
 use tubereng_ecs::{
     system::{Res, ResMut, Q},
     Storage,
 };
-use tubereng_math::vector::Vector3f;
+use tubereng_math::{matrix::Matrix4f, vector::Vector3f};
 use wgpu::include_wgsl;
 
 use crate::{
@@ -17,7 +17,7 @@ use crate::{
 };
 
 struct Quad2d {
-    pub(crate) transform: Transform,
+    pub(crate) transform: Matrix4f,
     texture_id: texture::Id,
     texture_rect: texture::Rect,
 }
@@ -139,7 +139,7 @@ impl Pass {
 
     #[allow(clippy::cast_precision_loss)]
     fn queue_quad_2d(&mut self, quad: &Quad2d, texture_info: &texture::Info) {
-        let local_to_world_matrix = quad.transform.as_matrix4();
+        let local_to_world_matrix = quad.transform;
 
         let texture_w = texture_info.width as f32;
         let texture_h = texture_info.height as f32;
@@ -330,13 +330,17 @@ impl RenderPass for Pass {
             }]),
         );
 
-        for (sprite, transform) in storage.query::<(&Sprite, &Transform)>().iter() {
+        let transform_cache = storage
+            .resource::<TransformCache>()
+            .expect("TransformCache resource should be present");
+
+        for (id, sprite) in storage.query::<&Sprite>().iter_with_ids() {
             self.create_texture_bind_group_for_texture_if_required(sprite.texture, &gfx);
             let texture_info = gfx.texture_cache.info(sprite.texture);
             #[allow(clippy::cast_precision_loss)]
             self.queue_quad_2d(
                 &Quad2d {
-                    transform: transform.clone(),
+                    transform: transform_cache.get(id),
                     texture_id: sprite.texture,
                     texture_rect: sprite.texture_rect.clone().unwrap_or(texture::Rect {
                         x: 0.0,
@@ -349,8 +353,7 @@ impl RenderPass for Pass {
             );
         }
 
-        for (animated_sprite, transform) in storage.query::<(&AnimatedSprite, &Transform)>().iter()
-        {
+        for (id, animated_sprite) in storage.query::<&AnimatedSprite>().iter_with_ids() {
             self.create_texture_bind_group_for_texture_if_required(
                 animated_sprite.texture_atlas,
                 &gfx,
@@ -362,7 +365,7 @@ impl RenderPass for Pass {
             #[allow(clippy::cast_precision_loss)]
             self.queue_quad_2d(
                 &Quad2d {
-                    transform: transform.clone(),
+                    transform: transform_cache.get(id),
                     texture_id: animated_sprite.texture_atlas,
                     texture_rect: rect,
                 },

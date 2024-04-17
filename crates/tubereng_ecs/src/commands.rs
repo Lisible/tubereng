@@ -1,22 +1,49 @@
-use std::{cell::RefCell, marker::PhantomData, vec::IntoIter};
+use std::{
+    cell::RefCell,
+    marker::PhantomData,
+    sync::atomic::{self, AtomicUsize},
+    vec::IntoIter,
+};
 
 use crate::{
     system::{self, System},
     Ecs, EntityDefinition, EntityId,
 };
 
-pub struct CommandQueue(RefCell<Vec<Box<dyn Command>>>);
+pub struct CommandQueue {
+    allocated_entity_count: AtomicUsize,
+    next_entity_id: usize,
+    deleted_entities: Vec<EntityId>,
+    commands: RefCell<Vec<Box<dyn Command>>>,
+}
 impl CommandQueue {
     #[must_use]
-    pub fn new() -> Self {
-        Self(RefCell::new(vec![]))
+    pub fn new(next_entity_id: usize, deleted_entities: &[EntityId]) -> Self {
+        Self {
+            allocated_entity_count: AtomicUsize::new(0),
+            next_entity_id,
+            deleted_entities: deleted_entities.to_vec(),
+            commands: RefCell::new(vec![]),
+        }
+    }
+    fn compute_next_entity_id(&self) -> EntityId {
+        let allocated_entity_count = self.allocated_entity_count.load(atomic::Ordering::Relaxed);
+        let id = if allocated_entity_count < self.deleted_entities.len() {
+            self.deleted_entities[allocated_entity_count]
+        } else {
+            self.next_entity_id + allocated_entity_count - self.deleted_entities.len()
+        };
+        self.allocated_entity_count
+            .fetch_add(1, atomic::Ordering::Relaxed);
+        id
     }
 
-    pub fn insert<ED>(&self, entity_definition: ED)
+    pub fn insert<ED>(&self, entity_definition: ED) -> EntityId
     where
         ED: 'static + EntityDefinition,
     {
         self.push_command(InsertEntity::new(entity_definition));
+        self.compute_next_entity_id()
     }
 
     pub fn delete(&self, entity_id: EntityId) {
@@ -46,13 +73,7 @@ impl CommandQueue {
     where
         C: 'static + Command,
     {
-        self.0.borrow_mut().push(Box::new(command));
-    }
-}
-
-impl Default for CommandQueue {
-    fn default() -> Self {
-        Self::new()
+        self.commands.borrow_mut().push(Box::new(command));
     }
 }
 
@@ -61,7 +82,7 @@ impl IntoIterator for CommandQueue {
     type IntoIter = IntoIter<Box<dyn Command>>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.0.into_inner().into_iter()
+        self.commands.into_inner().into_iter()
     }
 }
 

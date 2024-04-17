@@ -62,6 +62,15 @@ impl Storage {
         }
     }
 
+    #[must_use]
+    pub fn dirty_state<C: 'static>(&self, entity_id: EntityId) -> bool {
+        let Some(component_store) = self.component_stores.get(&TypeId::of::<C>()) else {
+            return false;
+        };
+
+        component_store.dirty(entity_id)
+    }
+
     pub fn insert<ED>(&mut self, entity_definition: ED) -> EntityId
     where
         ED: EntityDefinition,
@@ -189,7 +198,7 @@ impl Ecs {
     pub fn new() -> Self {
         Ecs {
             storage: Storage::new(),
-            command_queue: CommandQueue::new(),
+            command_queue: CommandQueue::new(0, &[]),
             system_schedule: system::Schedule::new(),
         }
     }
@@ -307,7 +316,8 @@ impl Ecs {
     }
 
     fn process_command_queue(&mut self) {
-        let mut command_queue = CommandQueue::new();
+        let mut command_queue =
+            CommandQueue::new(self.storage.next_entity_id, &self.storage.deleted_entities);
         std::mem::swap(&mut self.command_queue, &mut command_queue);
         for mut command in command_queue {
             command.apply(self);

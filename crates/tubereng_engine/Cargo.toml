@@ -13,6 +13,7 @@ tubereng_asset = { path = "../tubereng_asset" }
 tubereng_image = { path = "../tubereng_image" }
 tubereng_gui = { path = "../tubereng_gui" }
 tubereng_renderer = { path = "../tubereng_renderer" }
+tubereng_math = { path = "../tubereng_math" }
 raw-window-handle = "0.6"
 log = "0.4"
 

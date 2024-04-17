@@ -3,9 +3,10 @@
 use log::warn;
 use tubereng::{
     asset::AssetStore,
-    core::Transform,
+    core::{DeltaTime, Transform},
     ecs::{
         commands::CommandQueue,
+        relationship::ChildOf,
         system::{stages, Res, ResMut, Q},
     },
     engine::Engine,
@@ -13,7 +14,7 @@ use tubereng::{
     input::{keyboard::Key, InputState},
     math::vector::Vector3f,
     renderer::texture,
-    renderer::{sprite::Sprite, GraphicsState},
+    renderer::{camera, sprite::Sprite, GraphicsState},
     winit::WinitTuberRunner,
 };
 
@@ -54,45 +55,13 @@ fn init(queue: &CommandQueue, asset_store: ResMut<AssetStore>, mut gfx: ResMut<G
         height: image.height(),
     });
 
-    queue.insert((
+    queue.insert((camera::D2::new(800.0, 600.0), camera::Active));
+
+    let player = queue.insert((
         Player,
         Transform {
             translation: Vector3f::new(0.0, 0.0, 0.0),
-            scale: Vector3f::new(0.1, 0.1, 0.1),
-            ..Default::default()
-        },
-        Sprite {
-            texture: texture_id,
-            texture_rect: None,
-        },
-    ));
-    queue.insert((
-        Enemy,
-        Transform {
-            translation: Vector3f::new(-1.0, -1.0, 0.0),
-            scale: Vector3f::new(0.1, 0.1, 0.1),
-            ..Default::default()
-        },
-        Sprite {
-            texture: texture_id,
-            texture_rect: None,
-        },
-    ));
-    queue.insert((
-        Enemy,
-        Transform {
-            scale: Vector3f::new(0.1, 0.1, 0.1),
-            ..Default::default()
-        },
-        Sprite {
-            texture: texture_id,
-            texture_rect: None,
-        },
-    ));
-    queue.insert((
-        Enemy,
-        Transform {
-            scale: Vector3f::new(0.1, 0.1, 0.1),
+            scale: Vector3f::new(1.0, 1.0, 1.0),
             ..Default::default()
         },
         Sprite {
@@ -101,23 +70,41 @@ fn init(queue: &CommandQueue, asset_store: ResMut<AssetStore>, mut gfx: ResMut<G
         },
     ));
 
+    let other_entity = queue.insert((
+        Transform {
+            translation: Vector3f::new(200.0, 200.0, 0.0),
+            scale: Vector3f::new(1.0, 1.0, 1.0),
+            ..Default::default()
+        },
+        Sprite {
+            texture: texture_id,
+            texture_rect: None,
+        },
+    ));
+
+    queue.insert_relationship::<ChildOf>(other_entity, player);
     queue.register_system(&stages::Update, move_player);
 }
 
-fn move_player(input: Res<InputState>, mut query_player: Q<(&Player, &mut Transform)>) {
-    let (_, transform) = query_player
+fn move_player(
+    input: Res<InputState>,
+    mut query_player: Q<(&Player, &mut Transform)>,
+    dt: Res<DeltaTime>,
+) {
+    let (_, mut transform) = query_player
         .first()
         .expect("A player should be present in the scene");
 
-    if input.keyboard.is_key_down(Key::S) {
-        transform.translation.y -= 0.001;
-    } else if input.keyboard.is_key_down(Key::W) {
-        transform.translation.y += 0.001;
+    let velocity = 200.0 * dt.0;
+    if input.keyboard.is_key_down(Key::W) {
+        transform.translation.y -= velocity;
+    } else if input.keyboard.is_key_down(Key::S) {
+        transform.translation.y += velocity;
     }
 
     if input.keyboard.is_key_down(Key::A) {
-        transform.translation.x -= 0.001;
+        transform.translation.x -= velocity;
     } else if input.keyboard.is_key_down(Key::D) {
-        transform.translation.x += 0.001;
+        transform.translation.x += velocity;
     }
 }
