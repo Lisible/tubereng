@@ -34,6 +34,17 @@ struct Player {
 #[derive(Debug)]
 struct Enemy;
 
+#[cfg(not(target_arch = "wasm32"))]
+use tubereng::asset::vfs::filesystem::FileSystem;
+#[cfg(target_arch = "wasm32")]
+use {
+    include_dir::{include_dir, Dir},
+    tubereng::asset::vfs::web::Web,
+};
+
+#[cfg(target_arch = "wasm32")]
+static ASSETS: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/assets");
+
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen(start))]
 pub async fn run() {
     cfg_if::cfg_if! {
@@ -45,10 +56,15 @@ pub async fn run() {
         }
     }
 
+    #[cfg(target_arch = "wasm32")]
+    let vfs = Web::new(&ASSETS);
+    #[cfg(not(target_arch = "wasm32"))]
+    let vfs = FileSystem;
+
     let engine = Engine::builder()
         .with_application_title("basic-app")
         .with_init_system(init)
-        .build();
+        .build(vfs);
     WinitTuberRunner::run(engine).await.unwrap();
 }
 
@@ -209,7 +225,7 @@ fn move_player_jumping_system(
     delta_time: Res<DeltaTime>,
     input_state: Res<InputState>,
 ) {
-    const MAX_PLAYER_VELOCITY_X: f32 = 100.0;
+    const MAX_PLAYER_VELOCITY_X: f32 = 200.0;
     const MAX_PLAYER_VELOCITY_Y: f32 = 200.0;
     const GRAVITY: f32 = 0.015;
     const FRICTION: f32 = 0.1;

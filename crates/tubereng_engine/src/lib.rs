@@ -1,6 +1,7 @@
 #![warn(clippy::pedantic)]
 
 use std::sync::Arc;
+use tubereng_asset::vfs::VirtualFileSystem;
 use tubereng_asset::AssetLoader;
 use tubereng_asset::AssetStore;
 use tubereng_core::TransformCache;
@@ -25,17 +26,6 @@ use tubereng_ecs::{
     Ecs,
 };
 use tubereng_renderer::texture;
-
-#[cfg(not(target_arch = "wasm32"))]
-use tubereng_asset::vfs::filesystem::FileSystem;
-#[cfg(target_arch = "wasm32")]
-use {
-    include_dir::{include_dir, Dir},
-    tubereng_asset::vfs::web::Web,
-};
-
-#[cfg(target_arch = "wasm32")]
-static ASSETS: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/");
 
 pub struct Engine {
     application_title: &'static str,
@@ -118,15 +108,15 @@ impl EngineBuilder {
         self
     }
 
-    pub fn build(&mut self) -> Engine {
+    pub fn build<VFS>(&mut self, fs: VFS) -> Engine
+    where
+        VFS: 'static + VirtualFileSystem,
+    {
         let mut ecs = Ecs::new();
         ecs.insert_resource(InputState::new());
         ecs.insert_resource(TransformCache::new());
         ecs.define_relationship::<ChildOf>();
-        #[cfg(not(target_arch = "wasm32"))]
-        ecs.insert_resource(AssetStore::new(FileSystem));
-        #[cfg(target_arch = "wasm32")]
-        ecs.insert_resource(AssetStore::new(Web::new(&ASSETS)));
+        ecs.insert_resource(AssetStore::new(fs));
         ecs.register_system(&stages::Render, compute_effective_transforms_system);
 
         let init_system = self
