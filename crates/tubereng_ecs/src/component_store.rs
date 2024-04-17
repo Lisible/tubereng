@@ -197,7 +197,7 @@ impl ComponentStore {
 
 impl Drop for ComponentStore {
     fn drop(&mut self) {
-        if self.component_layout.size() == 0 {
+        if self.cap == 0 || self.component_layout.size() == 0 {
             return;
         }
 
