@@ -91,7 +91,7 @@ impl AssetStore {
         let mut resolved_asset_path = PathBuf::new();
         #[cfg(not(target_arch = "wasm32"))]
         {
-            if let Ok(manifest_path) = std::env::var("CARGO_MANIFEST_DIR") {
+            resolved_asset_path = if let Ok(manifest_path) = std::env::var("CARGO_MANIFEST_DIR") {
                 PathBuf::from(manifest_path)
             } else {
                 let mut path =
