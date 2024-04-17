@@ -51,6 +51,10 @@ impl Storage {
         }
     }
 
+    pub fn next_entity_id(&self) -> usize {
+        self.next_entity_id
+    }
+
     #[must_use]
     pub fn entity_count(&self) -> usize {
         self.next_entity_id - self.deleted_entities.len()
@@ -124,6 +128,10 @@ impl Storage {
 
     pub fn insert_relationship<R: 'static>(&mut self, source: EntityId, target: EntityId) {
         self.relationships.insert::<R>(source, target);
+    }
+
+    pub fn define_relationship<R: 'static>(&mut self) {
+        self.relationships.define::<R>();
     }
 
     #[must_use]
@@ -231,6 +239,10 @@ impl Ecs {
 
     pub fn insert_relationship<R: 'static>(&mut self, source: EntityId, target: EntityId) {
         self.storage.insert_relationship::<R>(source, target);
+    }
+
+    pub fn define_relationship<R: 'static>(&mut self) {
+        self.storage.define_relationship::<R>();
     }
 
     pub fn relationship<R: 'static>(&self) -> Option<&Relationship> {

@@ -18,6 +18,11 @@ impl Relationships {
         }
     }
 
+    pub fn define<R: 'static>(&mut self) {
+        self.relationships
+            .insert(TypeId::of::<R>(), Relationship::default());
+    }
+
     pub fn insert<R: 'static>(&mut self, source: EntityId, target: EntityId) {
         let relationship = self.relationships.entry(TypeId::of::<R>()).or_default();
         relationship.add(source, target);
@@ -85,13 +90,9 @@ impl Relationship {
     }
 
     #[must_use]
-    pub fn leaves(&self, max_entity_id: EntityId, ignore_entities: &[EntityId]) -> Vec<EntityId> {
+    pub fn leaves(&self, max_entity_id: EntityId) -> Vec<EntityId> {
         let mut leaves = vec![];
         for i in 0..=max_entity_id {
-            if ignore_entities.contains(&i) {
-                continue;
-            }
-
             match self.targets(i) {
                 Some(targets) if !targets.is_empty() => {}
                 _ => leaves.push(i),
@@ -165,7 +166,7 @@ mod tests {
         relationship.add(5, 6);
         relationship.add(1, 0);
 
-        let leaves = relationship.leaves(6, &[]);
+        let leaves = relationship.leaves(6);
         assert!(leaves.contains(&0));
         assert!(leaves.contains(&6));
         assert_eq!(leaves.len(), 2);

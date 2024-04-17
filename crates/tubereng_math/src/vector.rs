@@ -14,10 +14,16 @@ macro_rules! struct_vec {
             $(pub $dim: T,)*
         }
 
-        impl<T> $name<T> {
+        impl<T: Copy> $name<T> {
             pub fn new($($dim: T),*) -> Self {
                 Self {
                     $($dim),*
+                }
+            }
+
+            pub fn uniform(value: T) -> Self {
+                Self {
+                   $($dim: value,)*
                 }
             }
         }

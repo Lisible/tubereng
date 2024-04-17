@@ -20,9 +20,9 @@ pub struct Transform {
 impl Transform {
     #[must_use]
     pub fn as_matrix4(&self) -> Matrix4f {
-        Matrix4f::new_translation(&self.translation)
+        Matrix4f::new_scale(&self.scale)
+            * Matrix4f::new_translation(&self.translation)
             * self.rotation.rotation_matrix()
-            * Matrix4f::new_scale(&self.scale)
     }
 }
 

@@ -4,6 +4,7 @@ use std::sync::Arc;
 use tubereng_asset::AssetLoader;
 use tubereng_asset::AssetStore;
 use tubereng_core::TransformCache;
+
 use tubereng_ecs::system::stages;
 
 use tubereng_math::matrix::Identity;
@@ -12,7 +13,7 @@ use tubereng_math::matrix::Matrix4f;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use tubereng_core::DeltaTime;
 use tubereng_core::Transform;
-use tubereng_ecs::query::DirtyState;
+
 use tubereng_ecs::relationship::ChildOf;
 
 use tubereng_ecs::Storage;
@@ -121,6 +122,7 @@ impl EngineBuilder {
         let mut ecs = Ecs::new();
         ecs.insert_resource(InputState::new());
         ecs.insert_resource(TransformCache::new());
+        ecs.define_relationship::<ChildOf>();
         #[cfg(not(target_arch = "wasm32"))]
         ecs.insert_resource(AssetStore::new(FileSystem));
         #[cfg(target_arch = "wasm32")]
@@ -150,45 +152,35 @@ impl Default for EngineBuilder {
 }
 
 fn compute_effective_transforms_system(storage: &Storage) {
-    let child_of_relationship = storage
-        .relationship::<ChildOf>()
-        .expect("ChildOf relationship should be present");
+    let Some(child_of_relationship) = storage.relationship::<ChildOf>() else {
+        return;
+    };
 
     let mut dirty_transform_entities = vec![];
-    for (id, dirty) in storage.query::<DirtyState<Transform>>().iter_with_ids() {
-        if !dirty {
-            continue;
-        }
+    let mut to_visit = child_of_relationship.leaves(storage.next_entity_id());
 
-        let mut id = id;
-        if let Some(targets) = child_of_relationship.targets(id) {
-            if let Some(&parent_id) = targets.iter().next() {
-                let dirty = storage.dirty_state::<Transform>(parent_id);
-                if dirty {
-                    id = parent_id;
-                }
-            }
+    while let Some(entity_to_visit) = to_visit.pop() {
+        if storage.dirty_state::<Transform>(entity_to_visit) {
+            dirty_transform_entities.push(entity_to_visit);
+            dirty_transform_entities
+                .extend(child_of_relationship.ancestors(entity_to_visit).iter());
+        } else {
+            let children = child_of_relationship.sources(entity_to_visit);
+            to_visit.extend(children.iter().flat_map(|i| i.iter()));
         }
-
-        dirty_transform_entities.push(id);
     }
 
     let mut transform_cache = storage
         .resource_mut::<TransformCache>()
         .expect("A TransformCache resource should be present");
     while let Some(entity_id) = dirty_transform_entities.pop() {
-        let parent = match child_of_relationship.targets(entity_id) {
-            Some(parents) => parents.iter().next(),
-            None => None,
-        };
+        let parent = child_of_relationship
+            .targets(entity_id)
+            .and_then(|parents| parents.iter().next());
 
-        let parent_matrix = match parent {
-            Some(&parent_id) => match storage.component::<Transform>(parent_id) {
-                Some(transform) => transform.as_matrix4(),
-                None => Matrix4f::identity(),
-            },
-            None => Matrix4f::identity(),
-        };
+        let parent_matrix = parent
+            .and_then(|p| storage.component::<Transform>(*p))
+            .map_or_else(Matrix4f::identity, Transform::as_matrix4);
 
         let matrix = storage
             .component::<Transform>(entity_id)
