@@ -327,8 +327,6 @@ impl RenderPass for Pass {
             .expect("TransformCache resource should be present");
         let camera_transform = transform_cache.get(camera_id);
         let inverse_transform = camera_transform.try_inverse().unwrap();
-        dbg!(inverse_transform);
-
         gfx.queue().write_buffer(
             &self.pass_uniform_buffer,
             0,
