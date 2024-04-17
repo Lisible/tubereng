@@ -6,6 +6,7 @@ use tubereng::{
     core::{DeltaTime, Transform},
     ecs::{
         commands::CommandQueue,
+        relationship::ChildOf,
         system::{stages, Res, ResMut, Q},
     },
     engine::Engine,
@@ -62,13 +63,39 @@ fn init(queue: &CommandQueue, asset_store: ResMut<AssetStore>, mut gfx: ResMut<G
         height: image.height(),
     });
 
-    queue.insert((camera::D2::new(800.0, 600.0), camera::Active));
+    let camera = queue.insert((
+        camera::D2::new(800.0, 600.0),
+        camera::Active,
+        Transform {
+            translation: Vector3f::new(-400.0, -300.0, 0.0),
+            scale: Vector3f::uniform(0.8),
+            ..Default::default()
+        },
+    ));
 
     queue.insert((
+        Transform {
+            translation: Vector3f::new(0.0, 0.0, -10.0),
+            scale: Vector3f::uniform(12.5),
+            ..Default::default()
+        },
+        Sprite {
+            texture: texture_id,
+            texture_rect: Some(Rect::new(48.0, 0.0, 64.0, 48.0)),
+        },
+    ));
+
+    let player = queue.insert((
         Player::default(),
         Grounded,
         Transform {
-            translation: Vector3f::new(0.0, 600.0 / 4.0 - 21.0, 0.0),
+            translation: Vector3f::new(0.0, 600.0 - 85.0, 0.0),
+            ..Default::default()
+        },
+    ));
+
+    let player_sprite = queue.insert((
+        Transform {
             scale: Vector3f::new(4.0, 4.0, 4.0),
             ..Default::default()
         },
@@ -86,6 +113,9 @@ fn init(queue: &CommandQueue, asset_store: ResMut<AssetStore>, mut gfx: ResMut<G
             },
         },
     ));
+
+    queue.insert_relationship::<ChildOf>(player_sprite, player);
+    queue.insert_relationship::<ChildOf>(camera, player);
 
     for i in 0..13 {
         queue.insert((
@@ -116,8 +146,9 @@ fn move_player_grounded_system(
     delta_time: Res<DeltaTime>,
     input_state: Res<InputState>,
 ) {
-    const MAX_PLAYER_VELOCITY: f32 = 100.0;
-    const FRICTION: f32 = 0.4;
+    const MAX_PLAYER_VELOCITY_X: f32 = 200.0;
+    const MAX_PLAYER_VELOCITY_Y: f32 = 100.0;
+    const FRICTION: f32 = 1.0;
     let Some((player_id, (mut player, mut transform, _))) = query_player.first_with_id() else {
         return;
     };
@@ -147,17 +178,17 @@ fn move_player_grounded_system(
     }
 
     player.velocity.x += player.acceleration.x;
-    if player.velocity.x > MAX_PLAYER_VELOCITY {
-        player.velocity.x = MAX_PLAYER_VELOCITY;
-    } else if player.velocity.x < -MAX_PLAYER_VELOCITY {
-        player.velocity.x = -MAX_PLAYER_VELOCITY;
+    if player.velocity.x > MAX_PLAYER_VELOCITY_X {
+        player.velocity.x = MAX_PLAYER_VELOCITY_X;
+    } else if player.velocity.x < -MAX_PLAYER_VELOCITY_X {
+        player.velocity.x = -MAX_PLAYER_VELOCITY_X;
     }
 
     player.velocity.y += player.acceleration.y;
-    if player.velocity.y > MAX_PLAYER_VELOCITY {
-        player.velocity.y = MAX_PLAYER_VELOCITY;
-    } else if player.velocity.y < -MAX_PLAYER_VELOCITY {
-        player.velocity.y = -MAX_PLAYER_VELOCITY;
+    if player.velocity.y > MAX_PLAYER_VELOCITY_Y {
+        player.velocity.y = MAX_PLAYER_VELOCITY_Y;
+    } else if player.velocity.y < -MAX_PLAYER_VELOCITY_Y {
+        player.velocity.y = -MAX_PLAYER_VELOCITY_Y;
     }
 
     transform.translation.x += player.velocity.x * delta_time;
@@ -178,7 +209,8 @@ fn move_player_jumping_system(
     delta_time: Res<DeltaTime>,
     input_state: Res<InputState>,
 ) {
-    const MAX_PLAYER_VELOCITY: f32 = 100.0;
+    const MAX_PLAYER_VELOCITY_X: f32 = 100.0;
+    const MAX_PLAYER_VELOCITY_Y: f32 = 200.0;
     const GRAVITY: f32 = 0.015;
     const FRICTION: f32 = 0.1;
     let Some((player_id, (mut player, mut transform, _, mut max_jump_height_reached))) =
@@ -189,8 +221,8 @@ fn move_player_jumping_system(
     let delta_time = delta_time.0;
 
     if !max_jump_height_reached.0 && input_state.keyboard.is_key_down(Key::W) {
-        player.acceleration.y -= 0.04;
-        if player.acceleration.y < -1.0 {
+        player.acceleration.y -= 0.02;
+        if player.acceleration.y < -1.1 {
             max_jump_height_reached.0 = true;
         }
     }
@@ -210,24 +242,24 @@ fn move_player_jumping_system(
     }
 
     player.velocity.x += player.acceleration.x;
-    if player.velocity.x > MAX_PLAYER_VELOCITY {
-        player.velocity.x = MAX_PLAYER_VELOCITY;
-    } else if player.velocity.x < -MAX_PLAYER_VELOCITY {
-        player.velocity.x = -MAX_PLAYER_VELOCITY;
+    if player.velocity.x > MAX_PLAYER_VELOCITY_X {
+        player.velocity.x = MAX_PLAYER_VELOCITY_X;
+    } else if player.velocity.x < -MAX_PLAYER_VELOCITY_X {
+        player.velocity.x = -MAX_PLAYER_VELOCITY_X;
     }
 
     player.acceleration.y += GRAVITY;
     player.velocity.y += player.acceleration.y;
-    if player.velocity.y > MAX_PLAYER_VELOCITY {
-        player.velocity.y = MAX_PLAYER_VELOCITY;
-    } else if player.velocity.y < -MAX_PLAYER_VELOCITY {
-        player.velocity.y = -MAX_PLAYER_VELOCITY;
+    if player.velocity.y > MAX_PLAYER_VELOCITY_Y {
+        player.velocity.y = MAX_PLAYER_VELOCITY_Y;
+    } else if player.velocity.y < -MAX_PLAYER_VELOCITY_Y {
+        player.velocity.y = -MAX_PLAYER_VELOCITY_Y;
     }
 
     transform.translation.x += player.velocity.x * delta_time;
     transform.translation.y += player.velocity.y * delta_time;
-    if transform.translation.y > 600.0 / 4.0 - 21.0 {
-        transform.translation.y = 600.0 / 4.0 - 21.0;
+    if transform.translation.y > 600.0 - 85.0 {
+        transform.translation.y = 600.0 - 85.0;
         player.acceleration.y = 0.0;
         player.velocity.y = 0.0;
         queue.remove_component::<Jumping>(player_id);

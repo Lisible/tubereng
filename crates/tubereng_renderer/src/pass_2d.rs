@@ -316,23 +316,26 @@ impl RenderPass for Pass {
             .resource::<GraphicsState>()
             .expect("Graphics state should be present");
 
-        let (camera, _) = storage
+        let (camera_id, (camera, _)) = storage
             .query::<(&camera::D2, &camera::Active)>()
-            .iter()
+            .iter_with_ids()
             .next()
             .expect("An active 2d camera should be present in the scene");
+
+        let transform_cache = storage
+            .resource::<TransformCache>()
+            .expect("TransformCache resource should be present");
+        let camera_transform = transform_cache.get(camera_id);
+        let inverse_transform = camera_transform.try_inverse().unwrap();
+        dbg!(inverse_transform);
 
         gfx.queue().write_buffer(
             &self.pass_uniform_buffer,
             0,
             bytemuck::cast_slice(&[PassUniform {
-                view_proj: (*camera.projection()).into(),
+                view_proj: (*camera.projection() * inverse_transform).into(),
             }]),
         );
-
-        let transform_cache = storage
-            .resource::<TransformCache>()
-            .expect("TransformCache resource should be present");
 
         for (id, sprite) in storage.query::<&Sprite>().iter_with_ids() {
             self.create_texture_bind_group_for_texture_if_required(sprite.texture, &gfx);
