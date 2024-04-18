@@ -13,7 +13,7 @@ use winit::{
     dpi::{PhysicalPosition, PhysicalSize},
     error::{EventLoopError, OsError},
     event::{DeviceEvent, Event, KeyEvent, MouseButton, WindowEvent},
-    event_loop::{ControlFlow, EventLoop},
+    event_loop::EventLoop,
     keyboard::{KeyCode, PhysicalKey},
     window::WindowBuilder,
 };
@@ -34,6 +34,10 @@ impl WinitTuberRunner {
     ///
     /// Will return [`Err`] if the event loop cannot be created or run, or if
     /// the window cannot be created.
+    ///
+    /// # Panics
+    ///
+    /// For wasm32, might panic if the window canvas cannot be added to the page.
     pub async fn run(mut engine: Engine) -> Result<(), WinitError> {
         let event_loop = EventLoop::new().map_err(WinitError::EventLoopCreationFailed)?;
         let window = Arc::new(
@@ -46,9 +50,9 @@ impl WinitTuberRunner {
         );
         #[cfg(target_arch = "wasm32")]
         {
+            use winit::platform::web::WindowExtWebSys;
             let _ = window.request_inner_size(PhysicalSize::new(800, 600));
 
-            use winit::platform::web::WindowExtWebSys;
             web_sys::window()
                 .and_then(|win| win.document())
                 .and_then(|doc| {
@@ -60,7 +64,6 @@ impl WinitTuberRunner {
                 .expect("Couldn't append canvas to document body.");
         }
         engine.init_graphics(window.clone()).await;
-        event_loop.set_control_flow(ControlFlow::Poll);
         let mut last_frame_start_instant = Instant::now();
         event_loop
             .run(move |event, elwt| match event {
