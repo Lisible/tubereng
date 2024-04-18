@@ -164,20 +164,23 @@ fn compute_effective_transforms_system(storage: &Storage) {
         .resource_mut::<TransformCache>()
         .expect("A TransformCache resource should be present");
     while let Some(entity_id) = dirty_transform_entities.pop() {
-        let parent = child_of_relationship
-            .targets(entity_id)
-            .and_then(|parents| parents.iter().next());
+        let parents = child_of_relationship.successors(entity_id);
 
-        let parent_matrix = parent
-            .and_then(|p| storage.component::<Transform>(*p))
-            .map_or_else(Matrix4f::identity, Transform::as_matrix4);
-
-        let matrix = storage
+        let mut matrix = storage
             .component::<Transform>(entity_id)
             .unwrap()
             .as_matrix4();
 
-        transform_cache.set(entity_id, parent_matrix * matrix);
+        for parent in parents {
+            let parent_matrix = storage
+                .component::<Transform>(parent)
+                .map_or_else(Matrix4f::identity, Transform::as_matrix4);
+
+            matrix = parent_matrix * matrix;
+        }
+
+        transform_cache.set(entity_id, matrix);
+
         if let Some(children) = child_of_relationship.sources(entity_id) {
             dirty_transform_entities.extend(children.iter());
         }
