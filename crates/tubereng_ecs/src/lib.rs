@@ -51,6 +51,7 @@ impl Storage {
         }
     }
 
+    #[must_use]
     pub fn next_entity_id(&self) -> usize {
         self.next_entity_id
     }

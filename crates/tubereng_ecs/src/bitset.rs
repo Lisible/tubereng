@@ -25,8 +25,8 @@ impl BitSet for [u8] {
     }
 
     fn clear_bits(&mut self) {
-        for i in 0..self.len() {
-            self[i] = 0;
+        for i in self {
+            *i = 0;
         }
     }
 }
