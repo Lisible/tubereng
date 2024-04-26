@@ -7,9 +7,9 @@ use tubereng::{
     ecs::{
         commands::CommandQueue,
         relationship::ChildOf,
-        system::{stages, Res, ResMut, Q},
+        system::{Res, ResMut, Q},
     },
-    engine::Engine,
+    engine::{system_stage::Update, Engine},
     image::Image,
     input::{keyboard::Key, InputState},
     math::vector::{Vector2f, Vector3f},
@@ -64,6 +64,8 @@ pub async fn run() {
     let engine = Engine::builder()
         .with_application_title("basic-app")
         .with_init_system(init)
+        .with_system(&Update, move_player_grounded_system)
+        .with_system(&Update, move_player_jumping_system)
         .build(vfs);
     WinitTuberRunner::run(engine).await.unwrap();
 }
@@ -146,9 +148,6 @@ fn init(queue: &CommandQueue, asset_store: ResMut<AssetStore>, mut gfx: ResMut<G
             },
         ));
     }
-
-    queue.register_system(&stages::Update, move_player_grounded_system);
-    queue.register_system(&stages::Update, move_player_jumping_system);
 }
 
 #[derive(Debug)]

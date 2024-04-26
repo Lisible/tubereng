@@ -63,6 +63,7 @@ pub struct Pass {
 
 impl Pass {
     const MAX_VERTICES: usize = 10_000;
+    #[must_use]
     pub fn new(device: &wgpu::Device) -> Self {
         let vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("pass_2d_vertex_buffer"),
@@ -212,6 +213,7 @@ impl Pass {
         ]);
     }
 
+    #[must_use]
     pub fn create_pass_2d_pipeline(
         device: &wgpu::Device,
         bind_group_layouts: &[&wgpu::BindGroupLayout],
@@ -441,7 +443,7 @@ impl RenderPass for Pass {
     }
 }
 
-pub(crate) fn add_pass_system(
+pub fn add_pass_system(
     gfx: Res<GraphicsState>,
     mut graph: ResMut<RenderGraph>,
     mut query_camera: Q<(&camera::D2, &camera::Active)>,

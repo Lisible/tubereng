@@ -5,7 +5,7 @@ use std::{borrow::BorrowMut, collections::HashMap, sync::Arc};
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawWindowHandle};
 use render_graph::{RenderGraph, RenderPass};
 use tubereng_ecs::{
-    system::{stages, Res, ResMut},
+    system::{Res, ResMut},
     Ecs, Storage,
 };
 use wgpu::SurfaceTargetUnsafe;
@@ -13,7 +13,7 @@ use wgpu::SurfaceTargetUnsafe;
 pub mod camera;
 pub mod material;
 mod mesh;
-mod pass_2d;
+pub mod pass_2d;
 pub mod render_graph;
 pub mod sprite;
 pub mod texture;
@@ -335,15 +335,20 @@ pub async fn renderer_init<W>(
         encoder: None,
     });
 
-    ecs.register_system(&stages::Update, sprite::animate_sprite_system);
-    ecs.register_system(&stages::Render, begin_frame_system);
-    ecs.register_system(&stages::Render, add_clear_pass_system);
-    ecs.register_system(&stages::Render, pass_2d::add_pass_system);
-    ecs.register_system(&stages::FinalizeRender, prepare_passes_system);
-    ecs.register_system(&stages::FinalizeRender, finish_frame_system);
+    // ecs.register_system(&stages::Update, sprite::animate_sprite_system);
+    // ecs.register_system(&stages::Render, begin_frame_system);
+    // ecs.register_system(&stages::Render, add_clear_pass_system);
+    // ecs.register_system(&stages::Render, pass_2d::add_pass_system);
+    // ecs.register_system(&stages::FinalizeRender, prepare_passes_system);
+    // ecs.register_system(&stages::FinalizeRender, finish_frame_system);
 }
 
-fn begin_frame_system(
+/// Start a new frame
+///
+/// # Panics
+///
+/// Will panic if the swapchain texture cannot be fetched
+pub fn begin_frame_system(
     mut graphics: ResMut<GraphicsState>,
     mut frame_ctx: ResMut<FrameRenderingContext>,
     mut graph: ResMut<RenderGraph>,
@@ -368,7 +373,7 @@ fn begin_frame_system(
     graph.clear();
 }
 
-fn prepare_passes_system(mut graph: ResMut<RenderGraph>, storage: &Storage) {
+pub fn prepare_passes_system(mut graph: ResMut<RenderGraph>, storage: &Storage) {
     graph.prepare(storage);
 }
 
@@ -377,7 +382,7 @@ fn prepare_passes_system(mut graph: ResMut<RenderGraph>, storage: &Storage) {
 /// # Panics
 ///
 /// Panics if the surface texture cannot be obtained
-fn finish_frame_system(
+pub fn finish_frame_system(
     mut graphics: ResMut<GraphicsState>,
     mut frame_ctx: ResMut<FrameRenderingContext>,
     graph: Res<RenderGraph>,
@@ -397,7 +402,7 @@ fn finish_frame_system(
     std::mem::drop(graph);
 }
 
-fn add_clear_pass_system(mut graph: ResMut<RenderGraph>) {
+pub fn add_clear_pass_system(mut graph: ResMut<RenderGraph>) {
     graph.add_pass(ClearPass);
 }
 

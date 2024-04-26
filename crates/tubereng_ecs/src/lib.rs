@@ -215,7 +215,6 @@ impl Storage {
 pub struct Ecs {
     storage: Storage,
     command_queue: CommandQueue,
-    system_schedule: system::Schedule,
 }
 
 impl Ecs {
@@ -224,7 +223,6 @@ impl Ecs {
         Ecs {
             storage: Storage::new(),
             command_queue: CommandQueue::new(0, &[]),
-            system_schedule: system::Schedule::new(),
         }
     }
 
@@ -322,7 +320,7 @@ impl Ecs {
     }
 
     pub fn run_single_run_system(&mut self, system: &system::System) {
-        system.run(&mut self.storage, &mut self.command_queue);
+        system.run(self);
         self.process_command_queue();
     }
 
@@ -330,29 +328,7 @@ impl Ecs {
         self.storage.clear_dirty_flags();
     }
 
-    pub fn run_systems(&mut self) {
-        self.system_schedule
-            .run_systems(&mut self.storage, &mut self.command_queue);
-        self.process_command_queue();
-    }
-
-    pub fn register_system<S, F, A>(&mut self, _stage: &S, system: F)
-    where
-        S: 'static,
-        F: system::Into<A>,
-    {
-        self.insert_system::<S>(system.into_system());
-    }
-
-    fn insert_system<S>(&mut self, system: system::System)
-    where
-        S: 'static,
-    {
-        trace!("Registering system @{:?}", std::ptr::addr_of!(system));
-        self.system_schedule.register_system_for_stage::<S>(system);
-    }
-
-    fn process_command_queue(&mut self) {
+    pub fn process_command_queue(&mut self) {
         let mut command_queue =
             CommandQueue::new(self.storage.next_entity_id, &self.storage.deleted_entities);
         std::mem::swap(&mut self.command_queue, &mut command_queue);

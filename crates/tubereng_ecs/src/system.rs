@@ -7,14 +7,7 @@ use std::ops::{Deref, DerefMut};
 
 use crate::commands::CommandQueue;
 use crate::relationship::Relationship;
-use crate::{query, ComponentStores, EntityId, Storage};
-
-pub mod stages {
-    pub struct StartFrame;
-    pub struct Update;
-    pub struct Render;
-    pub struct FinalizeRender;
-}
+use crate::{query, ComponentStores, Ecs, EntityId, Storage};
 
 pub struct Schedule {
     stages: Vec<TypeId>,
@@ -24,23 +17,9 @@ pub struct Schedule {
 impl Schedule {
     #[must_use]
     pub fn new() -> Self {
-        let stages = vec![
-            TypeId::of::<stages::StartFrame>(),
-            TypeId::of::<stages::Update>(),
-            TypeId::of::<stages::Render>(),
-            TypeId::of::<stages::FinalizeRender>(),
-        ];
-
-        let mut stages_systems = HashMap::new();
-        for stage in &stages {
-            stages_systems
-                .entry(*stage)
-                .or_insert_with(Vec::<System>::new);
-        }
-
         Self {
-            stages,
-            stages_systems,
+            stages: vec![],
+            stages_systems: HashMap::new(),
         }
     }
 
@@ -49,22 +28,30 @@ impl Schedule {
     /// # Panics
     ///
     /// Will panic if the systems of a stage cannot be found
-    pub fn run_systems(&mut self, storage: &mut Storage, command_queue: &mut CommandQueue) {
+    pub fn run_systems(&mut self, ecs: &mut Ecs) {
         for stage in &self.stages {
             let systems = self.stages_systems.get_mut(stage).unwrap();
             for system in systems.iter_mut() {
-                system.run(storage, command_queue);
+                system.run(ecs);
             }
         }
     }
 
-    pub fn add_stage<S>(&mut self)
+    pub fn add_system<Stage, F, S>(&mut self, _stage: &Stage, system: F)
     where
+        Stage: 'static,
         S: 'static,
+        F: 'static + Into<S>,
     {
-        let stage_id = TypeId::of::<S>();
-        self.stages.push(stage_id);
-        self.stages_systems.insert(stage_id, vec![]);
+        let stage = TypeId::of::<Stage>();
+        if !self.stages_systems.contains_key(&stage) {
+            self.stages.push(stage);
+        }
+
+        self.stages_systems
+            .entry(TypeId::of::<Stage>())
+            .or_default()
+            .push(system.into_system());
     }
 
     /// Registers a system to the schedule for a given stage.
@@ -103,8 +90,8 @@ pub struct System {
 }
 
 impl System {
-    pub fn run(&self, storage: &mut Storage, command_queue: &mut CommandQueue) {
-        (self.system_fn)(command_queue, storage);
+    pub fn run(&self, ecs: &mut Ecs) {
+        (self.system_fn)(&mut ecs.command_queue, &mut ecs.storage);
     }
 }
 

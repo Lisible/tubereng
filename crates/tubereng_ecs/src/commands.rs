@@ -5,10 +5,7 @@ use std::{
     vec::IntoIter,
 };
 
-use crate::{
-    system::{self, System},
-    Ecs, EntityDefinition, EntityId,
-};
+use crate::{Ecs, EntityDefinition, EntityId};
 
 pub struct CommandQueue {
     allocated_entity_count: AtomicUsize,
@@ -67,14 +64,6 @@ impl CommandQueue {
 
     pub fn insert_relationship<R: 'static>(&self, source: EntityId, target: EntityId) {
         self.push_command(InsertRelationship::<R>::new(source, target));
-    }
-
-    pub fn register_system<S, F, A>(&self, _stage: &S, system: F)
-    where
-        S: 'static,
-        F: system::Into<A>,
-    {
-        self.push_command(RegisterSystem::<S>::new::<S, _, _>(system));
     }
 
     fn push_command<C>(&self, command: C)
@@ -230,31 +219,5 @@ where
 {
     fn apply(&mut self, ecs: &mut Ecs) {
         ecs.insert_relationship::<R>(self.source, self.target);
-    }
-}
-
-pub struct RegisterSystem<S> {
-    system: Option<System>,
-    _marker: PhantomData<S>,
-}
-
-impl<S> RegisterSystem<S> {
-    pub fn new<SS, F, A>(system: F) -> RegisterSystem<SS>
-    where
-        F: system::Into<A>,
-    {
-        RegisterSystem {
-            system: Some(system.into_system()),
-            _marker: PhantomData,
-        }
-    }
-}
-
-impl<S> Command for RegisterSystem<S>
-where
-    S: 'static,
-{
-    fn apply(&mut self, ecs: &mut Ecs) {
-        ecs.insert_system::<S>(self.system.take().unwrap());
     }
 }

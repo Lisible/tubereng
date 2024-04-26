@@ -6,8 +6,7 @@ use tubereng_asset::AssetLoader;
 use tubereng_asset::AssetStore;
 use tubereng_core::TransformCache;
 
-use tubereng_ecs::system::stages;
-
+use tubereng_ecs::system::Into;
 use tubereng_math::matrix::Identity;
 use tubereng_math::matrix::Matrix4f;
 
@@ -27,11 +26,19 @@ use tubereng_ecs::{
 };
 use tubereng_renderer::texture;
 
+pub mod system_stage {
+    pub struct StartFrame;
+    pub struct Update;
+    pub struct Render;
+    pub struct FinalizeRender;
+}
+
 pub struct Engine {
     application_title: &'static str,
     ecs: Ecs,
     init_system: System,
     init_system_ran: bool,
+    system_schedule: system::Schedule,
 }
 
 impl Engine {
@@ -62,10 +69,13 @@ impl Engine {
         self.ecs.insert_resource(DeltaTime(delta_time));
         self.ecs.clear_dirty_flags();
         if !self.init_system_ran {
-            self.ecs.run_single_run_system(&self.init_system);
+            self.init_system.run(&mut self.ecs);
+            self.ecs.process_command_queue();
             self.init_system_ran = true;
         }
-        self.ecs.run_systems();
+
+        self.system_schedule.run_systems(&mut self.ecs);
+        self.ecs.process_command_queue();
     }
 
     /// Handles the input
@@ -91,24 +101,37 @@ impl Engine {
 
 pub struct EngineBuilder {
     application_title: &'static str,
-    init_system: Option<system::System>,
+    init_system: system::System,
+    system_schedule: system::Schedule,
 }
 
 impl EngineBuilder {
-    pub fn with_application_title(&mut self, application_title: &'static str) -> &mut Self {
+    #[must_use]
+    pub fn with_init_system<F, A>(mut self, init_system: F) -> Self
+    where
+        F: 'static + system::Into<A>,
+    {
+        self.init_system = init_system.into_system();
+        self
+    }
+    #[must_use]
+    pub fn with_application_title(mut self, application_title: &'static str) -> Self {
         self.application_title = application_title;
         self
     }
 
-    pub fn with_init_system<F, A>(&mut self, init_system: F) -> &mut Self
+    #[must_use]
+    pub fn with_system<Stage, F, S>(mut self, stage: &Stage, system: F) -> Self
     where
-        F: 'static + system::Into<A>,
+        F: 'static + system::Into<S>,
+        S: 'static,
+        Stage: 'static,
     {
-        self.init_system = Some(init_system.into_system());
+        self.system_schedule.add_system(stage, system);
         self
     }
 
-    pub fn build<VFS>(&mut self, fs: VFS) -> Engine
+    pub fn build<VFS>(mut self, fs: VFS) -> Engine
     where
         VFS: 'static + VirtualFileSystem,
     {
@@ -117,17 +140,34 @@ impl EngineBuilder {
         ecs.insert_resource(TransformCache::new());
         ecs.define_relationship::<ChildOf>();
         ecs.insert_resource(AssetStore::new(fs));
-        ecs.register_system(&stages::Render, compute_effective_transforms_system);
 
-        let init_system = self
-            .init_system
-            .take()
-            .unwrap_or(system::Into::<()>::into_system(system::Noop));
+        self.system_schedule
+            .add_system(&system_stage::Render, compute_effective_transforms_system);
+        self.system_schedule
+            .add_system(&system_stage::Render, tubereng_renderer::begin_frame_system);
+        self.system_schedule.add_system(
+            &system_stage::Render,
+            tubereng_renderer::add_clear_pass_system,
+        );
+        self.system_schedule.add_system(
+            &system_stage::Render,
+            tubereng_renderer::pass_2d::add_pass_system,
+        );
+        self.system_schedule.add_system(
+            &system_stage::Render,
+            tubereng_renderer::prepare_passes_system,
+        );
+        self.system_schedule.add_system(
+            &system_stage::FinalizeRender,
+            tubereng_renderer::finish_frame_system,
+        );
+
         Engine {
             application_title: self.application_title,
             ecs,
-            init_system,
+            init_system: self.init_system,
             init_system_ran: false,
+            system_schedule: self.system_schedule,
         }
     }
 }
@@ -136,7 +176,8 @@ impl Default for EngineBuilder {
     fn default() -> Self {
         Self {
             application_title: "Tuber application",
-            init_system: None,
+            init_system: Into::<()>::into_system(system::Noop),
+            system_schedule: system::Schedule::default(),
         }
     }
 }
