@@ -1,6 +1,6 @@
 use tubereng_ecs::Storage;
 
-use crate::GraphicsState;
+use crate::{pass_2d, ClearPass, GraphicsState};
 
 pub struct RenderGraph {
     passes: Vec<Box<dyn RenderPass>>,
@@ -8,12 +8,10 @@ pub struct RenderGraph {
 
 impl RenderGraph {
     #[must_use]
-    pub fn new() -> Self {
-        Self { passes: vec![] }
-    }
-
-    pub fn clear(&mut self) {
-        self.passes.clear();
+    pub fn new(device: &wgpu::Device) -> Self {
+        Self {
+            passes: vec![Box::new(ClearPass), Box::new(pass_2d::Pass::new(device))],
+        }
     }
 
     pub fn add_pass<P>(&mut self, pass: P)
@@ -42,12 +40,6 @@ impl RenderGraph {
     }
 }
 
-impl Default for RenderGraph {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 pub trait RenderPass {
     fn prepare(&mut self, storage: &Storage);
     fn execute(
@@ -57,30 +49,4 @@ pub trait RenderPass {
         surface_texture_view: &wgpu::TextureView,
         storage: &Storage,
     );
-}
-
-#[cfg(test)]
-mod tests {
-
-    use super::*;
-
-    struct SomePass;
-    impl RenderPass for SomePass {
-        fn prepare(&mut self, _storage: &Storage) {}
-        fn execute(
-            &self,
-            _gfx: &mut GraphicsState,
-            _encoder: &mut wgpu::CommandEncoder,
-            _surface_texture_view: &wgpu::TextureView,
-            _storage: &Storage,
-        ) {
-        }
-    }
-
-    #[test]
-    fn add_pass() {
-        let mut graph = RenderGraph::new();
-        graph.add_pass(SomePass);
-        assert_eq!(graph.passes.len(), 1);
-    }
 }

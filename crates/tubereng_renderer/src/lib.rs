@@ -326,21 +326,14 @@ pub async fn renderer_init<W>(
     });
     gfx.placeholder_material_id = Some(placeholder_material_id);
 
+    ecs.insert_resource(RenderGraph::new(gfx.device()));
     ecs.insert_resource(gfx);
-    ecs.insert_resource(RenderGraph::new());
     ecs.insert_resource(PipelineCache::default());
     ecs.insert_resource(FrameRenderingContext {
         surface_texture: None,
         surface_texture_view: None,
         encoder: None,
     });
-
-    // ecs.register_system(&stages::Update, sprite::animate_sprite_system);
-    // ecs.register_system(&stages::Render, begin_frame_system);
-    // ecs.register_system(&stages::Render, add_clear_pass_system);
-    // ecs.register_system(&stages::Render, pass_2d::add_pass_system);
-    // ecs.register_system(&stages::FinalizeRender, prepare_passes_system);
-    // ecs.register_system(&stages::FinalizeRender, finish_frame_system);
 }
 
 /// Start a new frame
@@ -351,7 +344,6 @@ pub async fn renderer_init<W>(
 pub fn begin_frame_system(
     mut graphics: ResMut<GraphicsState>,
     mut frame_ctx: ResMut<FrameRenderingContext>,
-    mut graph: ResMut<RenderGraph>,
 ) {
     let graphics = graphics.borrow_mut();
     let surface_texture = graphics.wgpu_state.surface.get_current_texture().unwrap();
@@ -369,8 +361,6 @@ pub fn begin_frame_system(
     frame_ctx.surface_texture = Some(surface_texture);
     frame_ctx.surface_texture_view = Some(surface_texture_view);
     frame_ctx.encoder = Some(encoder);
-
-    graph.clear();
 }
 
 pub fn prepare_passes_system(mut graph: ResMut<RenderGraph>, storage: &Storage) {
@@ -400,10 +390,6 @@ pub fn finish_frame_system(
     surface_texture.present();
     std::mem::drop(graphics);
     std::mem::drop(graph);
-}
-
-pub fn add_clear_pass_system(mut graph: ResMut<RenderGraph>) {
-    graph.add_pass(ClearPass);
 }
 
 pub struct ClearPass;

@@ -1,17 +1,14 @@
 use std::collections::HashMap;
 
 use tubereng_core::TransformCache;
-use tubereng_ecs::{
-    system::{Res, ResMut, Q},
-    Storage,
-};
+use tubereng_ecs::Storage;
 use tubereng_math::{matrix::Matrix4f, vector::Vector3f};
 use wgpu::include_wgsl;
 
 use crate::{
     camera,
     mesh::Vertex,
-    render_graph::{RenderGraph, RenderPass},
+    render_graph::RenderPass,
     sprite::{AnimatedSprite, Sprite},
     texture, GraphicsState, PipelineCache,
 };
@@ -441,18 +438,4 @@ impl RenderPass for Pass {
             rpass.draw(batch.start_vertex_index..batch.end_vertex_index, 0..1);
         }
     }
-}
-
-pub fn add_pass_system(
-    gfx: Res<GraphicsState>,
-    mut graph: ResMut<RenderGraph>,
-    mut query_camera: Q<(&camera::D2, &camera::Active)>,
-) {
-    // Don't add a 2D pass if there is no 2D camera in the scene
-    if query_camera.iter().next().is_none() {
-        return;
-    }
-
-    graph.add_pass(Pass::new(&gfx.wgpu_state.device));
-    std::mem::drop(gfx);
 }

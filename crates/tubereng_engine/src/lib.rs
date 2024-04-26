@@ -147,14 +147,6 @@ impl EngineBuilder {
             .add_system(&system_stage::Render, tubereng_renderer::begin_frame_system);
         self.system_schedule.add_system(
             &system_stage::Render,
-            tubereng_renderer::add_clear_pass_system,
-        );
-        self.system_schedule.add_system(
-            &system_stage::Render,
-            tubereng_renderer::pass_2d::add_pass_system,
-        );
-        self.system_schedule.add_system(
-            &system_stage::Render,
             tubereng_renderer::prepare_passes_system,
         );
         self.system_schedule.add_system(
