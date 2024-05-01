@@ -2,8 +2,8 @@
 
 use std::{borrow::BorrowMut, collections::HashMap, sync::Arc};
 
+use graphics_pipeline::{GraphicsPipeline, RenderPass};
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawWindowHandle};
-use render_graph::{RenderGraph, RenderPass};
 use tubereng_ecs::{
     system::{Res, ResMut},
     Ecs, Storage,
@@ -11,10 +11,10 @@ use tubereng_ecs::{
 use wgpu::SurfaceTargetUnsafe;
 
 pub mod camera;
+pub mod graphics_pipeline;
 pub mod material;
 mod mesh;
 pub mod pass_2d;
-pub mod render_graph;
 pub mod sprite;
 pub mod texture;
 
@@ -326,7 +326,7 @@ pub async fn renderer_init<W>(
     });
     gfx.placeholder_material_id = Some(placeholder_material_id);
 
-    ecs.insert_resource(RenderGraph::new(gfx.device()));
+    ecs.insert_resource(GraphicsPipeline::new(gfx.device()));
     ecs.insert_resource(gfx);
     ecs.insert_resource(PipelineCache::default());
     ecs.insert_resource(FrameRenderingContext {
@@ -363,7 +363,7 @@ pub fn begin_frame_system(
     frame_ctx.encoder = Some(encoder);
 }
 
-pub fn prepare_passes_system(mut graph: ResMut<RenderGraph>, storage: &Storage) {
+pub fn prepare_passes_system(mut graph: ResMut<GraphicsPipeline>, storage: &Storage) {
     graph.prepare(storage);
 }
 
@@ -375,7 +375,7 @@ pub fn prepare_passes_system(mut graph: ResMut<RenderGraph>, storage: &Storage) 
 pub fn finish_frame_system(
     mut graphics: ResMut<GraphicsState>,
     mut frame_ctx: ResMut<FrameRenderingContext>,
-    graph: Res<RenderGraph>,
+    graph: Res<GraphicsPipeline>,
     storage: &Storage,
 ) {
     let mut encoder = frame_ctx.encoder.take().unwrap();

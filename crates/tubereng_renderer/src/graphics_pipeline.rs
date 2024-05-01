@@ -2,11 +2,11 @@ use tubereng_ecs::Storage;
 
 use crate::{pass_2d, ClearPass, GraphicsState};
 
-pub struct RenderGraph {
+pub struct GraphicsPipeline {
     passes: Vec<Box<dyn RenderPass>>,
 }
 
-impl RenderGraph {
+impl GraphicsPipeline {
     #[must_use]
     pub fn new(device: &wgpu::Device) -> Self {
         Self {

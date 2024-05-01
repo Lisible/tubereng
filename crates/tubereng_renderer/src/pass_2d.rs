@@ -7,8 +7,8 @@ use wgpu::include_wgsl;
 
 use crate::{
     camera,
+    graphics_pipeline::RenderPass,
     mesh::Vertex,
-    render_graph::RenderPass,
     sprite::{AnimatedSprite, Sprite},
     texture, GraphicsState, PipelineCache,
 };
