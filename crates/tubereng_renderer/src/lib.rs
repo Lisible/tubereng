@@ -326,7 +326,13 @@ pub async fn renderer_init<W>(
     });
     gfx.placeholder_material_id = Some(placeholder_material_id);
 
-    ecs.insert_resource(GraphicsPipeline::new(gfx.device()));
+    if ecs.resource::<GraphicsPipeline>().is_none() {
+        let pipeline = GraphicsPipeline::builder()
+            .add_pass(ClearPass)
+            .add_pass(pass_2d::Pass::new(gfx.device()))
+            .build();
+        ecs.insert_resource(pipeline);
+    }
     ecs.insert_resource(gfx);
     ecs.insert_resource(PipelineCache::default());
     ecs.insert_resource(FrameRenderingContext {

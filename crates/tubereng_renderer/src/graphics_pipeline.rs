@@ -1,6 +1,6 @@
 use tubereng_ecs::Storage;
 
-use crate::{pass_2d, ClearPass, GraphicsState};
+use crate::GraphicsState;
 
 pub struct GraphicsPipeline {
     passes: Vec<Box<dyn RenderPass>>,
@@ -8,10 +8,8 @@ pub struct GraphicsPipeline {
 
 impl GraphicsPipeline {
     #[must_use]
-    pub fn new(device: &wgpu::Device) -> Self {
-        Self {
-            passes: vec![Box::new(ClearPass), Box::new(pass_2d::Pass::new(device))],
-        }
+    pub fn builder() -> Builder {
+        Builder::default()
     }
 
     pub fn add_pass<P>(&mut self, pass: P)
@@ -37,6 +35,27 @@ impl GraphicsPipeline {
         for pass in &self.passes {
             pass.execute(graphics, encoder, surface_texture_view, storage);
         }
+    }
+}
+
+#[derive(Default)]
+pub struct Builder {
+    passes: Vec<Box<dyn RenderPass>>,
+}
+
+impl Builder {
+    pub fn add_pass<P>(&mut self, pass: P) -> &mut Self
+    where
+        P: 'static + RenderPass,
+    {
+        self.passes.push(Box::new(pass));
+        self
+    }
+
+    pub fn build(&mut self) -> GraphicsPipeline {
+        let mut passes = vec![];
+        passes.append(&mut self.passes);
+        GraphicsPipeline { passes }
     }
 }
 

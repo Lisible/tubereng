@@ -38,6 +38,9 @@ where
     component_stores: &'w ComponentStores,
     deleted_entities: &'w [EntityId],
     max_entity_index: usize,
+    // FIXME this is REALLY fishy, component access shouldn't be checked in the
+    // query but at the store level, because we could have two queries with the
+    // same component both mutably and immutably
     _accesses: ComponentAccesses,
     _marker: PhantomData<QD>,
 }
