@@ -1,7 +1,6 @@
 #![warn(clippy::pedantic)]
 
 use log::trace;
-use query::ComponentRefMut;
 use relationship::{Relationship, Relationships};
 use std::{
     alloc::Layout,
@@ -11,7 +10,7 @@ use std::{
 };
 
 use commands::CommandQueue;
-use component_store::{drop_fn_of, ComponentStore};
+use component_store::{drop_fn_of, ComponentRef, ComponentRefMut, ComponentStore};
 
 mod bitset;
 pub mod commands;
@@ -157,7 +156,7 @@ impl Storage {
     }
 
     #[must_use]
-    pub fn component<C>(&self, entity_id: EntityId) -> Option<&C>
+    pub fn component<C>(&self, entity_id: EntityId) -> Option<ComponentRef<C>>
     where
         C: 'static,
     {
@@ -171,7 +170,7 @@ impl Storage {
     }
 
     #[must_use]
-    pub fn component_mut<C>(&self, entity_id: EntityId) -> Option<ComponentRefMut<'_, C>>
+    pub fn component_mut<C>(&self, entity_id: EntityId) -> Option<ComponentRefMut<C>>
     where
         C: 'static,
     {
@@ -182,11 +181,6 @@ impl Storage {
         self.component_stores
             .get(&TypeId::of::<C>())?
             .get_mut(entity_id)
-            .map(|r| ComponentRefMut {
-                inner: r,
-                component_stores: &self.component_stores,
-                entity_id,
-            })
     }
 
     #[must_use]
@@ -296,7 +290,7 @@ impl Ecs {
 
     /// Returns an immutable reference to a component in the Ecs, or `None` if not found.
     #[must_use]
-    pub fn component<C>(&self, entity_id: EntityId) -> Option<&C>
+    pub fn component<C>(&self, entity_id: EntityId) -> Option<ComponentRef<C>>
     where
         C: 'static,
     {
@@ -305,7 +299,7 @@ impl Ecs {
 
     /// Returns a mutable reference to a component in the Ecs, or `None` if not found.
     #[must_use]
-    pub fn component_mut<C>(&self, entity_id: EntityId) -> Option<ComponentRefMut<'_, C>>
+    pub fn component_mut<C>(&self, entity_id: EntityId) -> Option<ComponentRefMut<C>>
     where
         C: 'static,
     {
@@ -433,6 +427,8 @@ impl_entity_definition_for_tuple!(A: 0, B: 1, C: 2, D: 3, E: 4, F: 5,);
 #[cfg(test)]
 mod tests {
 
+    use self::system::{Into, Q};
+
     use super::*;
 
     #[derive(Debug)]
@@ -470,10 +466,16 @@ mod tests {
         let first_enemy = ecs.insert((Enemy, Health(5), Position { x: 5, y: 9 }));
         let second_enemy = ecs.insert((Enemy, Health(2), Position { x: 7, y: 12 }));
 
-        assert_eq!(ecs.component::<Health>(player), Some(&Health(10)));
-        assert_eq!(ecs.component::<Health>(first_enemy), Some(&Health(5)));
         assert_eq!(
-            ecs.component::<Position>(second_enemy),
+            ecs.component::<Health>(player).as_deref(),
+            Some(&Health(10))
+        );
+        assert_eq!(
+            ecs.component::<Health>(first_enemy).as_deref(),
+            Some(&Health(5))
+        );
+        assert_eq!(
+            ecs.component::<Position>(second_enemy).as_deref(),
             Some(&Position { x: 7, y: 12 })
         );
     }
@@ -482,9 +484,11 @@ mod tests {
     fn ecs_component_mut() {
         let mut ecs = Ecs::new();
         let enemy = ecs.insert((Enemy, Health(5), Position { x: 5, y: 9 }));
-        let mut enemy_health = ecs.component_mut::<Health>(enemy).unwrap();
-        enemy_health.0 -= 1;
-        assert_eq!(ecs.component::<Health>(enemy), Some(&Health(4)));
+        {
+            let mut enemy_health = ecs.component_mut::<Health>(enemy).unwrap();
+            enemy_health.0 -= 1;
+        }
+        assert_eq!(ecs.component::<Health>(enemy).as_deref(), Some(&Health(4)));
     }
 
     #[test]
@@ -496,9 +500,9 @@ mod tests {
 
         let mut health_query = ecs.query::<&Health>();
         let mut health_query_iter = health_query.iter();
-        assert_eq!(health_query_iter.next(), Some(&Health(10)));
-        assert_eq!(health_query_iter.next(), Some(&Health(5)));
-        assert_eq!(health_query_iter.next(), Some(&Health(2)));
+        assert_eq!(health_query_iter.next().as_deref(), Some(&Health(10)));
+        assert_eq!(health_query_iter.next().as_deref(), Some(&Health(5)));
+        assert_eq!(health_query_iter.next().as_deref(), Some(&Health(2)));
     }
 
     #[test]
@@ -509,18 +513,18 @@ mod tests {
         let _ = ecs.insert((Enemy, Health(2), Position { x: 7, y: 12 }));
         let mut health_pos_query = ecs.query::<(&Health, &Position)>();
         let mut health_pos_query_iter = health_pos_query.iter();
-        assert_eq!(
-            health_pos_query_iter.next(),
-            Some((&Health(10), &Position { x: 3, y: 5 }))
-        );
-        assert_eq!(
-            health_pos_query_iter.next(),
-            Some((&Health(5), &Position { x: 5, y: 9 }))
-        );
-        assert_eq!(
-            health_pos_query_iter.next(),
-            Some((&Health(2), &Position { x: 7, y: 12 }))
-        );
+
+        let first_health_pos = health_pos_query_iter.next().unwrap();
+        assert_eq!(*first_health_pos.0, Health(10));
+        assert_eq!(*first_health_pos.1, Position { x: 3, y: 5 });
+
+        let second_health_pos = health_pos_query_iter.next().unwrap();
+        assert_eq!(*second_health_pos.0, Health(5));
+        assert_eq!(*second_health_pos.1, Position { x: 5, y: 9 });
+
+        let third_health_pos = health_pos_query_iter.next().unwrap();
+        assert_eq!(*third_health_pos.0, Health(2));
+        assert_eq!(*third_health_pos.1, Position { x: 7, y: 12 });
     }
 
     #[test]
@@ -535,9 +539,18 @@ mod tests {
             *enemy_health -= 1;
         }
 
-        assert_eq!(ecs.component::<Health>(player), Some(&Health(10)));
-        assert_eq!(ecs.component::<Health>(first_enemy), Some(&Health(4)));
-        assert_eq!(ecs.component::<Health>(second_enemy), Some(&Health(1)));
+        assert_eq!(
+            ecs.component::<Health>(player).as_deref(),
+            Some(&Health(10))
+        );
+        assert_eq!(
+            ecs.component::<Health>(first_enemy).as_deref(),
+            Some(&Health(4))
+        );
+        assert_eq!(
+            ecs.component::<Health>(second_enemy).as_deref(),
+            Some(&Health(1))
+        );
     }
 
     #[test]

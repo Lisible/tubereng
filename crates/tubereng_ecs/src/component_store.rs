@@ -1,19 +1,24 @@
 use std::{
     alloc::Layout,
+    any::TypeId,
     cell::{RefCell, UnsafeCell},
+    ops::{Deref, DerefMut},
     ptr::NonNull,
+    rc::Rc,
 };
 
 use crate::{bitset::BitSet, EntityId, MAX_ENTITY_COUNT};
 
-// FIXME Currently, getting multiple mutable/immutable references to a same component is possible
-// This is UB and needs to be fix asap.
+type EntityBitSet = [u8; MAX_ENTITY_COUNT / 8];
+
 pub struct ComponentStore {
     component_layout: Layout,
     data: UnsafeCell<NonNull<u8>>,
     cap: usize,
-    entities_bitset: [u8; MAX_ENTITY_COUNT / 8],
-    dirty_bitset: RefCell<[u8; MAX_ENTITY_COUNT / 8]>,
+    entities_bitset: EntityBitSet,
+    dirty_bitset: Rc<RefCell<EntityBitSet>>,
+    read_access_bitset: Rc<RefCell<EntityBitSet>>,
+    write_access_bitset: Rc<RefCell<EntityBitSet>>,
     drop_fn: unsafe fn(*mut u8),
 }
 
@@ -33,7 +38,9 @@ impl ComponentStore {
             data: UnsafeCell::new(NonNull::dangling()),
             cap,
             entities_bitset: [0u8; MAX_ENTITY_COUNT / 8],
-            dirty_bitset: RefCell::new([0u8; MAX_ENTITY_COUNT / 8]),
+            dirty_bitset: Rc::new(RefCell::new([0u8; MAX_ENTITY_COUNT / 8])),
+            read_access_bitset: Rc::new(RefCell::new([0u8; MAX_ENTITY_COUNT / 8])),
+            write_access_bitset: Rc::new(RefCell::new([0u8; MAX_ENTITY_COUNT / 8])),
             drop_fn,
         }
     }
@@ -78,7 +85,10 @@ impl ComponentStore {
         }
     }
 
-    pub fn get<C>(&self, entity_id: EntityId) -> Option<&C> {
+    pub fn get<C>(&self, entity_id: EntityId) -> Option<ComponentRef<C>>
+    where
+        C: 'static,
+    {
         if entity_id >= MAX_ENTITY_COUNT {
             return None;
         }
@@ -91,18 +101,30 @@ impl ComponentStore {
             return None;
         }
 
+        assert!(
+            !self.write_access_bitset.borrow().bit(entity_id),
+            "Component {:?} of entity {entity_id} is already accessed mutably",
+            TypeId::of::<C>()
+        );
+
+        self.read_access_bitset.borrow_mut().set_bit(entity_id);
+
         // SAFETY:
         // We checked that entity_id is smaller than self.cap, so it must be
         // in bound
         let ptr = unsafe { self.ptr_at(entity_id) };
 
-        // SAFETY:
-        // Since the bit corresponding to this component is set in the bitset,
-        // the pointer points to valid component data
-        unsafe { Some(&*ptr.cast::<C>()) }
+        Some(ComponentRef {
+            inner: ptr.cast::<C>(),
+            access: self.read_access_bitset.clone(),
+            entity_id,
+        })
     }
 
-    pub fn get_mut<C>(&self, entity_id: EntityId) -> Option<&mut C> {
+    pub fn get_mut<C>(&self, entity_id: EntityId) -> Option<ComponentRefMut<C>>
+    where
+        C: 'static,
+    {
         if entity_id >= MAX_ENTITY_COUNT {
             return None;
         }
@@ -115,15 +137,29 @@ impl ComponentStore {
             return None;
         }
 
+        assert!(
+            !self.write_access_bitset.borrow().bit(entity_id),
+            "Component {:?} of entity {entity_id} is already accessed mutably",
+            TypeId::of::<C>()
+        );
+        assert!(
+            !self.read_access_bitset.borrow().bit(entity_id),
+            "Component {:?} of entity {entity_id} is already accessed immutably",
+            TypeId::of::<C>()
+        );
+        self.write_access_bitset.borrow_mut().set_bit(entity_id);
+
         // SAFETY:
         // We checked that entity_id is smaller than self.cap, so it must be
         // in bound
         let ptr = unsafe { self.ptr_at(entity_id) };
 
-        // SAFETY:
-        // Since the bit corresponding to this component is set in the bitset,
-        // the pointer points to valid component data
-        unsafe { Some(&mut *ptr.cast::<C>()) }
+        Some(ComponentRefMut {
+            inner: ptr.cast::<C>(),
+            access: self.write_access_bitset.clone(),
+            dirty: self.dirty_bitset.clone(),
+            entity_id,
+        })
     }
 
     /// # Safety
@@ -220,6 +256,60 @@ pub unsafe fn drop_fn_of<T>(ptr: *mut u8) {
     ptr.cast::<T>().drop_in_place();
 }
 
+#[derive(Debug)]
+pub struct ComponentRef<T> {
+    inner: *const T,
+    access: Rc<RefCell<EntityBitSet>>,
+    entity_id: EntityId,
+}
+
+impl<T> Deref for ComponentRef<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        // SAFETY: If we have a component ref, it means we checked that there
+        // was no mutable reference on that component
+        unsafe { &*self.inner }
+    }
+}
+
+impl<T> Drop for ComponentRef<T> {
+    fn drop(&mut self) {
+        self.access.borrow_mut().unset_bit(self.entity_id);
+    }
+}
+
+#[derive(Debug)]
+pub struct ComponentRefMut<T> {
+    inner: *mut T,
+    access: Rc<RefCell<EntityBitSet>>,
+    dirty: Rc<RefCell<EntityBitSet>>,
+    entity_id: EntityId,
+}
+
+impl<T> Deref for ComponentRefMut<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        // SAFETY: If we have a component ref, it means we checked that there
+        // was no mutable reference on that component
+        unsafe { &*self.inner }
+    }
+}
+
+impl<T> DerefMut for ComponentRefMut<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.dirty.borrow_mut().set_bit(self.entity_id);
+        unsafe { &mut *self.inner }
+    }
+}
+
+impl<T> Drop for ComponentRefMut<T> {
+    fn drop(&mut self) {
+        self.access.borrow_mut().unset_bit(self.entity_id);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -259,9 +349,11 @@ mod tests {
         store.store(5, Position { x: 23, y: 12 });
         store.store(2, Position { x: 11, y: 33 });
 
-        let position = store.get_mut::<Position>(2).unwrap();
-        position.x = 83;
-        position.y = 92;
+        {
+            let mut position = store.get_mut::<Position>(2).unwrap();
+            position.x = 83;
+            position.y = 92;
+        }
 
         let position = store.get::<Position>(5).unwrap();
         assert_eq!(position.x, 23);

@@ -1,10 +1,9 @@
-use std::{
-    any::TypeId,
-    marker::PhantomData,
-    ops::{Deref, DerefMut},
-};
+use std::{any::TypeId, marker::PhantomData};
 
-use crate::{ComponentStores, EntityId};
+use crate::{
+    component_store::{ComponentRef, ComponentRefMut},
+    ComponentStores, EntityId,
+};
 
 pub struct State<'w, QD>
 where
@@ -200,7 +199,7 @@ impl<C: 'static> Definition for DirtyState<C> {
 }
 
 impl<T: 'static> Definition for &T {
-    type Item<'a> = &'a T;
+    type Item<'a> = ComponentRef<T>;
 
     fn fetch(component_stores: &ComponentStores, entity_id: usize) -> Option<Self::Item<'_>> {
         component_stores.get(&TypeId::of::<T>())?.get(entity_id)
@@ -208,42 +207,10 @@ impl<T: 'static> Definition for &T {
 }
 
 impl<T: 'static> Definition for &mut T {
-    type Item<'a> = ComponentRefMut<'a, T>;
+    type Item<'a> = ComponentRefMut<T>;
 
     fn fetch(component_stores: &ComponentStores, entity_id: usize) -> Option<Self::Item<'_>> {
-        Some(ComponentRefMut {
-            inner: component_stores
-                .get(&TypeId::of::<T>())?
-                .get_mut(entity_id)?,
-            component_stores,
-            entity_id,
-        })
-    }
-}
-
-/// Reference to a component that sets the dirty bit of the component on
-/// deref.
-pub struct ComponentRefMut<'a, T: 'static> {
-    pub(crate) inner: &'a mut T,
-    pub(crate) component_stores: &'a ComponentStores,
-    pub(crate) entity_id: usize,
-}
-
-impl<'a, T: 'static> Deref for ComponentRefMut<'a, T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        self.inner
-    }
-}
-
-impl<T: 'static> DerefMut for ComponentRefMut<'_, T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        self.component_stores
-            .get(&TypeId::of::<T>())
-            .unwrap()
-            .set_dirty(self.entity_id);
-        self.inner
+        component_stores.get(&TypeId::of::<T>())?.get_mut(entity_id)
     }
 }
 
