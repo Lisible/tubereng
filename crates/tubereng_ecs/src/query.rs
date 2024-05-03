@@ -1,35 +1,10 @@
 use std::{
     any::TypeId,
-    cell::RefCell,
-    collections::HashSet,
     marker::PhantomData,
     ops::{Deref, DerefMut},
 };
 
 use crate::{ComponentStores, EntityId};
-
-pub struct ComponentAccesses {
-    // TODO: Consider using bitsets instead of HashSet, but we would need to
-    // have ecs-managed ComponentIds instead of TypeIds
-    read: RefCell<HashSet<TypeId>>,
-    write: RefCell<HashSet<TypeId>>,
-}
-
-impl Default for ComponentAccesses {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl ComponentAccesses {
-    #[must_use]
-    pub fn new() -> Self {
-        Self {
-            read: RefCell::new(HashSet::new()),
-            write: RefCell::new(HashSet::new()),
-        }
-    }
-}
 
 pub struct State<'w, QD>
 where
@@ -38,10 +13,6 @@ where
     component_stores: &'w ComponentStores,
     deleted_entities: &'w [EntityId],
     max_entity_index: usize,
-    // FIXME this is REALLY fishy, component access shouldn't be checked in the
-    // query but at the store level, because we could have two queries with the
-    // same component both mutably and immutably
-    _accesses: ComponentAccesses,
     _marker: PhantomData<QD>,
 }
 
@@ -55,12 +26,9 @@ where
         deleted_entities: &'w [EntityId],
         max_entity_index: usize,
     ) -> Self {
-        let accesses = ComponentAccesses::new();
-        QD::register_component_accesses(&accesses);
         Self {
             component_stores,
             max_entity_index,
-            _accesses: accesses,
             _marker: PhantomData,
             deleted_entities,
         }
@@ -194,8 +162,6 @@ where
 
 pub trait Definition {
     type Item<'a>;
-    fn register_component_accesses(accesses: &ComponentAccesses);
-
     fn fetch(component_stores: &ComponentStores, entity_id: usize) -> Option<Self::Item<'_>>
     where
         Self: Sized;
@@ -205,11 +171,6 @@ macro_rules! impl_definition_for_tuples {
     ($head:tt, $($tail:tt,)*) => {
         impl<$head: Definition, $($tail: Definition,)*> Definition for ($head, $($tail,)*) {
             type Item<'a> = ($head::Item<'a>, $($tail::Item<'a>,)*);
-
-            fn register_component_accesses(accesses: &ComponentAccesses) {
-                $head::register_component_accesses(accesses);
-                $($tail::register_component_accesses(accesses);)*
-            }
 
             fn fetch(component_stores: &ComponentStores, entity_id: usize) -> Option<Self::Item<'_>> {
                 Some((
@@ -230,8 +191,6 @@ pub struct DirtyState<C>(PhantomData<C>);
 impl<C: 'static> Definition for DirtyState<C> {
     type Item<'a> = bool;
 
-    fn register_component_accesses(_accesses: &ComponentAccesses) {}
-
     fn fetch(component_stores: &ComponentStores, entity_id: usize) -> Option<Self::Item<'_>>
     where
         Self: Sized,
@@ -242,15 +201,7 @@ impl<C: 'static> Definition for DirtyState<C> {
 
 impl<T: 'static> Definition for &T {
     type Item<'a> = &'a T;
-    fn register_component_accesses(accesses: &ComponentAccesses) {
-        let component_type_id = TypeId::of::<T>();
-        assert!(
-            !accesses.write.borrow().contains(&component_type_id),
-            "Component already has write access"
-        );
 
-        accesses.read.borrow_mut().insert(component_type_id);
-    }
     fn fetch(component_stores: &ComponentStores, entity_id: usize) -> Option<Self::Item<'_>> {
         component_stores.get(&TypeId::of::<T>())?.get(entity_id)
     }
@@ -258,19 +209,7 @@ impl<T: 'static> Definition for &T {
 
 impl<T: 'static> Definition for &mut T {
     type Item<'a> = ComponentRefMut<'a, T>;
-    fn register_component_accesses(accesses: &ComponentAccesses) {
-        let component_type_id = TypeId::of::<T>();
-        assert!(
-            !accesses.read.borrow().contains(&component_type_id),
-            "Component already has read access"
-        );
-        assert!(
-            !accesses.write.borrow().contains(&component_type_id),
-            "Component already has write access"
-        );
 
-        accesses.write.borrow_mut().insert(component_type_id);
-    }
     fn fetch(component_stores: &ComponentStores, entity_id: usize) -> Option<Self::Item<'_>> {
         Some(ComponentRefMut {
             inner: component_stores

@@ -6,6 +6,8 @@ use std::{
 
 use crate::{bitset::BitSet, EntityId, MAX_ENTITY_COUNT};
 
+// FIXME Currently, getting multiple mutable/immutable references to a same component is possible
+// This is UB and needs to be fix asap.
 pub struct ComponentStore {
     component_layout: Layout,
     data: UnsafeCell<NonNull<u8>>,
