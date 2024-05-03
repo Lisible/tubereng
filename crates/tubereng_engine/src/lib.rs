@@ -207,7 +207,7 @@ fn compute_effective_transforms_system(storage: &Storage) {
         for parent in parents {
             let parent_matrix = storage
                 .component::<Transform>(parent)
-                .map_or_else(Matrix4f::identity, Transform::as_matrix4);
+                .map_or_else(Matrix4f::identity, |transform| transform.as_matrix4());
 
             matrix = parent_matrix * matrix;
         }
